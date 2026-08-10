@@ -63,31 +63,6 @@ won't connect to anything there.
 **Empty your units first.** The engine drops placed objects it no longer
 recognizes, together with everything inside them. Backpack items are safe.
 
-## Build from source
-
-The mod folder ships as-is, nothing is generated at install time. The tooling
-is here so you can rebuild the art or re-run the checks.
-
-```sh
-# Regenerate all sprites and their metadata. Deterministic, needs Pillow.
-python make_art.py yads
-
-# Every symbol the GML calls must exist in the game's own code.
-# Point it at a folder holding an extraction of the game's assets/gml.
-python check_symbols.py yads/gml /path/to/corpus
-
-# The ship gate. Exit 0 means the installer would accept the mod.
-# The mod path must be absolute.
-ModsOfMistriaInstaller-cli.exe --lint "<abs path>/yads" \
-    "<game>/assets.bak.zip" --strict-lints --compile-check require
-```
-
-Keep the mod folder named `yads`. The installer derives the legal GML function
-prefix from the folder name, and every function here is `yads_*`.
-
-The engine research notes this mod was built from are not in the repo. They
-quote the game's source, which isn't mine to republish.
-
 ## Credits
 
 Applied Energistics 2, Refined Storage and Magic Storage for the genre. Built
