@@ -23,7 +23,9 @@ category.
 
 Place units so they touch and they link up. Connected units glow (blocks tint
 green, yellow or red by how full they are), a unit that missed the chain shows
-a sad face. Networks are per room, and table surfaces don't link.
+a sad face. Each room is its own separate network, so the farm and the
+farmhouse each need their own Heart. Don't place units on top of tables, they
+won't connect to anything there.
 
 ## Features
 
