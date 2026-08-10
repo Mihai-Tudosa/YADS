@@ -1,0 +1,18 @@
+{
+    "name": "YADS - Yet Another Digital Storage Mod",
+    "author": "mykay",
+    "version": "Beta 1.0",
+    "description": "Link Storage Hearts, Blocks and Access Panels into one searchable, sortable network inventory.",
+    "minInstallerVersion": "0.15.1",
+    "manifestVersion": 1,
+    "requires_hooks": [
+        "object.interact",
+        "ui.menu_closed",
+        "save.game_saving",
+        "save.game_loaded",
+        "furniture.place_guard",
+        "camera.culls_processed",
+        "game.room_changed",
+        "resource.node_modifier"
+    ]
+}

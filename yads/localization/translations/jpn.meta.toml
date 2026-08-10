@@ -1,0 +1,60 @@
+# YADS — one Japanese key, and only one.
+#
+# WHY THIS FILE EXISTS. Our woodcrafting sub-category is appended to the vanilla
+# fiddle table (fiddle/ui/crafting/woodcrafting.toml) and the engine renames such
+# entries to their POSITIONAL path key at load — l10n.meta.toml:290 registers
+# "ui/crafting/" = ["categories/*/name", "categories/*/sub_categories/*/name"],
+# which is why every shipped translation table is keyed by
+# "ui/crafting/woodcrafting/categories/<i>/sub_categories/<j>/name" rather than
+# by the English text. Our entry lands at categories/1 ("Functional"),
+# sub_categories/5 — verified by running MOMI's own MergeTomlTables over the
+# pristine assets.bak.zip, 110 sub-categories in, 111 out, ours last.
+#
+# Vanilla "Functional" has five sub-categories, indices 0..4. The Japanese table
+# nevertheless still carries a SIXTH, "…/sub_categories/5/name" = 「その他」
+# ("Other"), left over from a build where a "Misc. Functional" bucket sat last;
+# assets/localization/source_caches/jpn.meta.toml records its source as
+# "Miscellaneous". That key is dead data — and it is the exact slot our append
+# takes. Across all sixteen categories and all seven shipped locales it is the
+# ONLY translation index that exceeds its category's live sub-count, so this is
+# the one place in the game where an appended sub-category can inherit somebody
+# else's name. Without this file, 日本語 players would see our icon and our three
+# items under a header reading 「その他」.
+#
+# The other six locales have no key at that index and fall back to the English
+# source "Digital Storage", which is correct and needs no file. Only Japanese is
+# wrong, so only Japanese is overridden.
+#
+# HOW IT MERGES. TOMLCollector treats this as an ungrouped .meta.toml (no spr_ /
+# poly_ prefix, so no AnimationGroup) and hands it to InstallGenericToml, whose
+# destination is Installer.DestinationPath = "assets/" + the mod-relative path,
+# i.e. assets/localization/translations/jpn.meta.toml — which exists, so
+# MergeOrWriteToml recurses MOMIOperations.MergeTomlTables into the destination's
+# own [asset_properties] and overwrites this single key. Nothing else in a 3.6MB
+# table is named here and nothing else can therefore be touched.
+#
+# [meta_properties] is deliberately ABSENT: the destination already carries its
+# own id and asset_kind, the merge only writes keys the source names, and this
+# mod's other localization file (localization/l10n.meta.toml) sets the same
+# precedent. Do not add an id here — it would overwrite the game's.
+#
+# ONE KEY ONLY. If a future version adds a second sub-category, do not grow this
+# file on the assumption that the next index is stale too: index 5 is unique in
+# the shipped data, and index 6 has no Japanese key at all, so it will correctly
+# fall back to English.
+#
+# AND THE KEY IS POSITIONAL, WHICH MAKES IT BLIND TO OTHER MODS. Index 5 is
+# correct for this mod installed alone. MOMIOperations.MergeTomlTableArrays
+# APPENDS, and MOMI applies mods in its own set order, so any other mod that
+# appends a sub-category to vanilla "Functional" ahead of us takes index 5 and
+# ours lands at 6. Japanese then reads their header as 「デジタルストレージ」 and
+# ours falls back to the English "Digital Storage" — the two names swap, in one
+# locale, on one header. Bounded and cosmetic: no data effect, self-limiting to a
+# single wrong string, and every other locale is unaffected because none of them
+# has a key at either index. There is no fix from inside a static TOML — the key
+# would have to be computed at install time against the merged table — so this is
+# a stated limitation rather than an open bug. The reasoning above is about future
+# versions of THIS mod; this paragraph is the part about everybody else's.
+
+[asset_properties]
+"ui/crafting/woodcrafting/categories/1/sub_categories/5/name" = "デジタルストレージ"

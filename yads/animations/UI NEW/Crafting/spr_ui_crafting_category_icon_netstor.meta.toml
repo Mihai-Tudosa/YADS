@@ -1,0 +1,6 @@
+[meta_properties]
+asset_kind = "Animation"
+
+[asset_properties]
+frame_size = [14, 14]
+atlas = "UI"

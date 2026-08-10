@@ -1,0 +1,112 @@
+[center][size=6][b]YADS — Yet Another Digital Storage Mod[/b][/size]
+[size=3][i]Network storage for Fields of Mistria. One search bar for every crate you own.[/i][/size]
+
+[b]Beta 1.0[/b] · by mykay · requires [url=https://www.nexusmods.com/fieldsofmistria/mods/78]Mods of Mistria Installer[/url] 0.15.1+[/center]
+
+[line]
+
+[size=5][b]💾 What is this?[/b][/size]
+
+If you have ever played modded Minecraft or Terraria, you already know this mod. YADS is a love letter to [b]Applied Energistics 2[/b], [b]Refined Storage[/b] and [b]Magic Storage[/b] — the "stop opening forty chests" genre — rebuilt for Mistria's cozy pace. It is, proudly, yet another digital storage mod.
+
+Link storage units into a network, walk up to one terminal, and see [i]everything[/i]: searchable, sortable, filterable, on pages, with quick-stack. Your hoard, one screen.
+
+[size=5][b]📦 The three units[/b][/size]
+
+[list]
+[*][b]Storage Heart[/b] — [i]50 Wood · 5 Copper Ingot · 1 Glass[/i]
+The brain. Every network needs exactly one. Interact for a status report: how many blocks are connected, how full each one is, how full the network is. The heart doesn't store your things — it knows where they are.
+[*][b]Storage Block[/b] — [i]30 Wood · 1 Copper Ingot[/i]
+30 slots of network capacity each. Chain as many as you like. Sealed while connected (the network handles them); a block with no heart behaves as a plain chest, so your items are never trapped.
+[*][b]Access Panel[/b] — [i]1 Copper Ingot · 1 Glass[/i]
+The terminal. Interact to browse the whole network.
+[/list]
+
+All three are crafted at the [b]Woodcrafting Station[/b] from crafting level 1 — a brand-new save qualifies, and the station is pre-placed on every farm. They list in [b]two[/b] places: under vanilla's own "Chests & Storage", and under a dedicated [b]"Digital Storage"[/b] sub-category (Functional tab, last in the list) so the set stays together as it grows. 日本語 players get a translated header for it.
+
+[b]⚠ Copper [i]Ingot[/i], not Copper Ore.[/b] Ingots are refined at a [b]Forge[/b] — a Blacksmithing-discipline placeable sold by the Carpenter for 2,000g, and [i]not[/i] pre-placed on a new farm. Balor's Wagon also rotates Copper Ingot into stock sometimes. Budget for that before you go mining.
+
+[size=5][b]✨ New in Beta 1.0[/b][/size]
+
+[list]
+[*][b]Squeeze between your crates.[/b] Each unit now blocks you only on its solid core, with a walkable margin either side — so a long shelf of Blocks is a wall you can still walk along instead of a fence you have to go around. The units still feel solid when you walk into them; you just stop getting stuck behind your own storage.
+[*][b]Value badges sit higher.[/b] Two pixels up and clear of the item art, so the number reads against the slot instead of against a sprite.
+[*][b]Softer glow.[/b] The connection and fill colours are pastel now — the same green / yellow / red reading, in Mistria's own palette rather than in neon.
+[/list]
+
+[b]⚠ Updating from an Alpha build:[/b] the mod's internal id changed with the rename, so the installer treats this as a new mod. Delete the old [font=Courier New]mods/Digital Storage/[/font] folder, extract the new [font=Courier New]mods/yads/[/font], and [b]tick YADS once in the MOMI list[/b] — the old entry's tick doesn't carry over. Your saves and everything stored in placed units are untouched: the item and object names deliberately did not change. Two settings reset once — auto-search (back to on) and the value-badge mode (back to off).
+
+[size=5][b]🔌 Building a network[/b][/size]
+
+Place units so their footprints touch on an edge — heart, blocks, panel, in any arrangement, like one long shelf or a solid slab. Connected units [b]glow[/b]; a unit that missed the chain shows a little [b]sad face[/b] until you nudge it into place. One heart per chain is required (more is fine).
+
+Blocks tint their glow by how full they are: [b]green[/b] empty, [b]yellow[/b] in use, [b]red[/b] full — so you can eyeball capacity from across the farm. Hearts and Panels stay plain cyan; they aren't deposit targets, so they have no fill level to report.
+
+Crafting stations already pull materials from chests in vanilla Mistria — so everything in your network [b]feeds every recipe automatically[/b]. No cables, no export bus. Caldarus would call it magic; we call it a warehouse.
+
+[size=5][b]🔎 The network view[/b][/size]
+
+Open an Access Panel and you get the vanilla storage UI, 45 item cells a page, over every connected unit at once.
+
+[list]
+[*][b]A real search box.[/b] Click to place the cursor, then type — arrows, Home/End, Backspace/Delete, Shift+select, Ctrl+A, Ctrl+C/X/V, the lot. With auto-search on (it's a toggle, and it persists) the box is already focused the moment the panel opens, AE2-style: walk up, type "iron", done.
+[*][b]16 category filters[/b] on a paged bottom row — All, the 14 item categories, and [b]"Museum needs"[/b], which shows only the items the museum is still missing. One filter at a time, and it narrows down further with whatever is in the search box.
+[*][b]Value badges.[/b] A small coin-and-number in the corner of every occupied cell, cycling [b]off → per stack → per item[/b] (your choice persists). It's what selling would actually pay you right now — quality, infusions and perks included — and big totals abbreviate, so [i]12.3k[/i] instead of a number that eats the cell.
+[*][b]Five sort modes[/b], cycled from one button: [b]Category → Name → Value → Stack val → Count[/b]. "Stack val" ranks by what the whole stack is worth rather than one item, which is the number you actually want when deciding what to sell.
+[*][b]Pages[/b] via the arrows on the bottom bar, the mouse wheel over the grid, or PAGE_UP / PAGE_DOWN.
+[*][b]Quick-stack to network[/b] from the banner button: every backpack stack whose kind the network already holds gets pushed in, from any page.
+[*]If a deposit can't fully fit, the remainder comes straight back to you — backpack, or your feet if that's full too — with a "Network storage is full." toast. Nothing is ever silently eaten.
+[/list]
+
+[size=5][b]⛏️ Removal protection[/b][/size]
+
+Swinging a pickaxe at a unit that still holds items doesn't take it apart on the first hit. The first swing shows a one-line toast and vanilla's own "that didn't work" shake-and-rumble; it takes [b]five swings on the same unit[/b] to actually break it, and it resets after ten seconds of not swinging, on reload, or on leaving the room. A wide charged swing counts as [b]one[/b], not one per tile it covers. So does a bomb blast. It works the same from every side, including while you are standing on the unit.
+
+This is a guard against the [i]accident[/i] — the swing aimed at the rock behind the crate — and it is sized for exactly that. It is not data-loss prevention, because there was never any data loss to prevent: vanilla already drops a broken unit's entire inventory on the ground, same as any chest. What it saves you is the afternoon spent picking fifty-four stacks back up.
+
+Two things still get through it, both engine-level: erasing a unit under a [b]blueprint or farm expansion[/b] (that path never reaches the pickaxe code at all), and a unit standing [b]on a table[/b] (the swing resolves the table, which comes apart in one hit and takes its whole surface with it). Contents drop to the ground either way.
+
+[size=5][b]🛡️ Your items are safe (the boring engineering bit)[/b][/size]
+
+This mod is built around one rule: [b]it never holds your items.[/b] Everything you store lives in the real chest inventories of the placed units, which the game's own save system writes — the big network view is a live mirror, reconciled every frame. If the game crashes with the view open, nothing is lost.
+
+The mod adds nothing of its own to your save file. The removal guard is the one place it touches a field the game does save, and it is handled accordingly: the value is set for the length of a single swing, put back on the very next frame, and put back again before the game writes a single byte — so an uninstalled mod leaves your crates exactly as vanilla made them.
+
+It was built against the game's engine source with an adversarial review process specifically hunting item-loss bugs, because a storage mod that eats items isn't a storage mod, it's a shredder with UI.
+
+[b]⚠ The one warning that matters:[/b] before UNINSTALLING the mod, empty your storage units. The engine silently discards placed objects it no longer recognises — along with their contents. (Items in your backpack survive fine.)
+
+[size=5][b]🧪 Beta notes[/b][/size]
+
+[list]
+[*]Works on existing saves — recipes unlock automatically on load, no popup.
+[*]Networks are per-room (engine grids are per-location). Farm and farmhouse are separate networks; each farmhouse room too.
+[*]Don't place units on tables — table surfaces are separate sub-grids, won't link, and get no swing protection.
+[*][b]You can wall yourself in with the new walkable margins — and you can always get out.[/b] Stand in the gap between two flush units, box it in with more units above and below, and you're sealed in a one-tile pocket (vanilla's placement check never tested for enclosure either). Swing your pickaxe at any adjacent unit to break out — one swing if it's empty, five if it holds items. Sleeping or leaving the room also fixes it.
+[*]Deposits go to Blocks only, never the Heart or Panel. A heart-only network has nowhere to put anything; add a Block.
+[*]A Heart on a network with no Access Panel yet just tells you to craft one — no status popup until there's a way in.
+[*]The vanilla [i]Throw[/i] key can still stuff an item into any specific unit directly — engine behavior no mod hook can intercept. Harmless; the network view shows items wherever they land.
+[*]Sealed blocks still show the vanilla "Open" prompt before politely refusing — same story, the prompt is engine-side.
+[*]The category row stays one row of 8 at any resolution: the menu renders on a fixed logical canvas, so a bigger monitor doesn't buy more room.
+[*]Back up your saves before installing any mod. Good practice, not a warning about this one.
+[/list]
+
+[size=5][b]📥 Install[/b][/size]
+
+[list=1]
+[*]Extract into your [font=Courier New]Fields of Mistria/mods/[/font] folder (so it reads [font=Courier New]mods/yads/manifest.json[/font] — no double-nesting). [b]Keep the folder named [font=Courier New]yads[/font][/b]; the installer derives the mod's code namespace from it.
+[*]Run the Mods of Mistria Installer, tick [b]YADS[/b] → Install.
+[*]Play. Craft a Heart, chain some Blocks, add a Panel, never open forty chests again.
+[/list]
+
+[size=5][b]🙏 Credits & inspiration[/b][/size]
+
+Standing on the shoulders of the storage giants: [b]Applied Energistics 2[/b], [b]Refined Storage[/b], [b]Magic Storage[/b] (Terraria), and every other mod that taught us a chest wall is a UI problem. Built with [url=https://github.com/Garethp/Mods-of-Mistria-Installer]Mods of Mistria / MMAPI[/url] — enormous thanks to its maintainers for the modding layer that makes this possible. And to NPC Studio, whose engine ships readable enough source to mod this deeply.
+
+[url=https://github.com/Mihai-Tudosa/YADS]Source on GitHub[/url]
+
+[i]Found a bug? Especially anything that touched your items wrong — report it with your log file ([font=Courier New]%LOCALAPPDATA%\FieldsOfMistria\mod_data\yads\logs[/font]) and I will treat it like a reactor alarm.[/i]
+
+[size=5][b]☕ Buy me a coffee[/b][/size]
+
+If YADS saved you an afternoon of chest-diving and you feel like buying me a coffee: [url=https://paypal.me/tudosamihai]paypal.me/tudosamihai[/url]. No obligation — the mod is and stays free.

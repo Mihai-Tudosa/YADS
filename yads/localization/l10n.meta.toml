@@ -1,0 +1,13 @@
+# YADS — localization registration.
+# MOMI-merges into the game's `assets/localization/l10n.meta.toml` (TomlTable recurse,
+# R1 §2.7), adding one new key under the existing `fiddle_renames` table.
+#
+# Flat per-file form ONLY (R1 §2.5 / MOD_ANATOMY.md): an umbrella directory entry like
+# `"mods/yads" = ["*"]` crashes the engine at boot. This registers exactly
+# `fiddle/mods/yads/ui.toml` (path minus extension = "mods/yads/ui"),
+# and nothing else — item name/description localization is already covered globally by the
+# game's own pre-existing `"items/" = ["*/name", "*/description"]` entry; no action needed here.
+
+[asset_properties]
+	[asset_properties.fiddle_renames]
+		"mods/yads/ui" = ["*"]

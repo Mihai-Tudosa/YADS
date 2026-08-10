@@ -1,0 +1,38 @@
+# YADS — line-ending policy.
+#
+# The whole repository is LF in the index AND in the working tree. This is not
+# taste: `make_art.py` writes every generated .meta.toml / .toml / .json with
+# newline="\n" (make_art.py:1590), so any CRLF in the tree would make the
+# generator's own "a clean run is byte-identical" contract false on Windows,
+# and a `git diff` of a mod file would render as a whole-file rewrite instead of
+# the two lines that actually moved. Beta 1.0's rename audit lost real signal to
+# exactly that.
+#
+# `eol=lf` (rather than bare `text`) pins the WORKING TREE too, so core.autocrlf
+# on a contributor's Windows box cannot check the files back out as CRLF.
+
+*               text=auto eol=lf
+
+# Belt and braces for the file kinds this repo actually contains.
+*.gml           text eol=lf
+*.toml          text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.py            text eol=lf
+*.bbcode        text eol=lf
+*.sh            text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Never touched, never diffed as text. The sprites and the contact sheet are
+# generator output; a normalization pass over them would corrupt them.
+*.png           binary
+*.zip           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.ttf           binary
+*.otf           binary
+*.wav           binary
+*.ogg           binary

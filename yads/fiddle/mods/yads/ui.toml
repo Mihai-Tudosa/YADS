@@ -1,0 +1,145 @@
+# YADS — UI strings (notification + network-view panel labels).
+# Flat top-level keys only: the localization registration for this file
+# (localization/l10n.meta.toml) uses a single wildcard entry
+# `"mods/yads/ui" = ["*"]`, which covers every top-level key here.
+# GML reads these as `mods/yads/ui/<key>` via local_get()/create_notification().
+
+# Shown when interacting with an Access Panel that has no Storage Heart on its network.
+no_heart = "No Storage Heart connected to this panel."
+
+# Shown when a deposit could not fit anywhere on the network (overflow went back to the player).
+network_full = "Network storage is full."
+
+# Sort-cycle button labels, one per sort mode.
+sort_category = "Category"
+sort_name = "Name"
+sort_value = "Value"
+sort_count = "Count"
+# Fifth sort mode: sorts by the stack's total value (unit value * count)
+# rather than sort_value's per-unit value. Cycle order: Category -> Name ->
+# Value -> Stack val -> Count (STACK_VALUE is mode 3, immediately after VALUE -
+# the two are the same question at two scales).
+#
+# MEASURED, NOT CHOSEN. The sort button is 58px and the label the engine builds
+# for it reflows at parent.width - required_padding = 58 - 6 = 52px
+# (Node.gml:963, :1069-1074, :1099-1109). "Stack Value" is 64px in the standard
+# font (assets/fiddle/fonts/text_widths.toml) and wrapped to two lines that
+# overflowed the 14px button by ~6px top and bottom, in every locale - this key
+# has no translations, so the English width is the only width. "Stack val" is
+# 50px and clears with 2px to spare. The period is missing on purpose: "Stack
+# val." is 52px, i.e. exactly the budget, and a wrap fix must not ship a new
+# boundary condition. If this string is ever re-worded, measure it against that
+# table first and keep it under 52.
+sort_stack_value = "Stack val"
+
+# Search box placeholder text.
+search_placeholder = "Search items..."
+
+# Page indicator pattern; GML fills the two placeholders with (current page, total pages).
+#
+# NO "Page" PREFIX, and it cannot come back. The counter is centred in a 72px
+# pager cluster between two 5px arrows, so it has 62px; "Page 100 / 100" is 77px
+# in the standard font and would overrun both arrows. "100 / 100" is 49px. The
+# cluster is 72 rather than 88 so the left arrow clears the glyph guide's ESC
+# backplate, which is 80px wide in Russian; see the layout comment over the pager
+# in view.gml. A fraction between two arrows needs no noun, and this key has no
+# translations, so the English width is the width in every language. Keep any
+# replacement under 62px.
+#
+# THREE DIGITS IS THE NUMBER TO BUDGET FOR, not two. Pages are driven by CELLS,
+# not by distinct item ids: yads_project splits every row into
+# ceil(total / max_stack) cells and pages them 45 at a time, so the ceiling is set
+# by occupied member SLOTS. 35 Storage Blocks are 1,050 slots and already pass 23
+# pages with one item kind in them. Measured against fonts/text_widths.toml
+# (digit 6, space 3, "/" 7): "23 / 23" 37px, "100 / 100" 49px, "999 / 999" 49px,
+# "1000 / 1000" 61px against the 62px interior. Four digits needs ~45,000 cells
+# (about 1,500 blocks - placeable on the 188x144 farm grid, absurd but not
+# impossible) and still fits by a pixel; five digits needs more grid than the farm
+# has. The label physically cannot overrun - but budget it from the cell count, not
+# from an item-id count that has nothing to do with it.
+page_label = "{} / {}"
+
+# --- Auto-search toggle ----------------------------------------------------
+# Button label AND the shared tooltip text when this button is hovered - the
+# toggle always displays (and describes) its own current state.
+autosearch_on  = "Auto-search: on"
+autosearch_off = "Auto-search: off"
+
+# --- Heart status GUI ------------------------------------------------------
+status_title      = "Storage Network"
+# One row per connected block. {} = block number, {} = fill percent.
+status_block_row  = "Block {}"
+status_percent    = "{}%"
+# Footer line, left side. Exactly ONE placeholder: {} = percent.
+# (Used/total slot counts live in status_slots, the right side of the row.)
+status_total      = "Network {}% full"
+status_slots      = "{} / {} slots"
+# Header line under the title. {} = number of connected Storage Blocks.
+status_blocks     = "{} blocks connected"
+# Shown instead of the row list when the heart has no blocks yet.
+status_no_blocks  = "No Storage Blocks connected."
+# Shown when the network has no Access Panel - the only browsing surface.
+status_no_panel   = "Craft an Access Panel to browse this network."
+
+# --- Sealed block toast ----------------------------------------------------
+block_sealed      = "This block is part of a storage network. Use an Access Panel."
+
+# --- Swing-protected unit toast --------------------------------------------
+# Shown once per attempt, on the first counted swing against a non-empty unit.
+# The resource.node_modifier hook in network.gml suppresses node.destructable
+# for the duration of each pick_node call until 5 attempts have landed, counting
+# at most one per frame so that a wide charged swing (or a bomb blast, which
+# covers several cells at once) is one attempt and not six.
+#
+# "UNIT", NOT "BLOCK". The filter claims all three kinds, and the other two can
+# legitimately hold items - the Heart via the documented Throw side-door and via
+# any save older than the blocks-only deposit rule, the Panel (4 slots) via
+# Throw - so "block" would name something the player is not hitting.
+#
+# "4 MORE", NOT "5 TIMES". The toast fires on the call that takes the counter to
+# 1, so one of the five is already spent when the player reads it. This is the
+# only number the feature exposes and it has to match what the player will
+# actually experience.
+# The count is hard-coded here: this number is YADS_PICK_SWINGS - 1, and changing
+# that macro means editing this string in the same pass.
+block_protected   = "This unit contains items - 4 more swings to break it."
+
+# --- Row-6 filter bar ------------------------------------------------------
+# The filter bar carries one button per raw category bucket (yads_category,
+# network.gml) plus All and the Museum toggle - 16 slots, paged 8-at-a-time.
+# Most buckets already have a translated vanilla label (misc_local/*, read-only,
+# NEVER write to that file) and are wired straight to those keys with no ui.toml
+# entry needed. filter_farming names a coarser group from an older taxonomy and
+# no longer labels a bucket: nothing in yads_filter_label_key (view.gml) returns
+# it. It is NOT unreferenced, though — do not delete it. view.gml:1093 passes it
+# to the hint label's set_key() as that node's construction-time placeholder.
+# The string is never rendered (hint_plate is built .set_enabled(false) and
+# yads_hint_think always set_key()s the real key before enabling it), but
+# removing the key would leave a dangling reference. Kept also for any
+# translation that may already exist against it.
+filter_farming    = "Farming"
+filter_fish_bugs  = "Fish & Bugs"
+# Buckets with no vanilla misc_local equivalent - mod keys, spelled exactly as
+# the GML switch that reads them expects.
+filter_crops      = "Crops & Forage"
+filter_seeds      = "Seeds & Saplings"
+filter_flooring   = "Flooring & Wallpaper"
+filter_scrolls    = "Scrolls & Unlocks"
+
+# --- Museum filter toggle --------------------------------------------------
+# Group 15 of the sixteen rotating filter buttons, and it REPLACES the active
+# category rather than intersecting with it: yads_project's filter pass tests
+# `_museum` and the category match as the two arms of one if/else, so selecting
+# "Museum needs" drops whatever category was selected. It ANDs with the SEARCH
+# STRING only.
+# Icon pair spr_ui_generic_icon_museum_off/on mirrors the vanilla tooltip's own
+# marker.
+filter_museum     = "Museum needs"
+
+# --- Value badge cycle button ----------------------------------------------
+# Bottom-bar toggle in the same family as autosearch_on/off above: the button
+# always shows (and its tooltip always describes) the CURRENT state, cycling
+# off -> stack -> unit on tap. Persisted like auto_search.
+value_off         = "Values: off"
+value_stack       = "Values: per stack"
+value_unit        = "Values: per item"

@@ -1,0 +1,171 @@
+# YADS — object prototypes for the Netstor Set.
+#
+# ⚠ THE `netstor_*` KEYS ARE FROZEN FOREVER. Content keys are save-serialized BY
+# NAME: the grid writes `object_id` as a string and Grid.load_objects looks it
+# back up with try_string_to_object_id, dropping any node whose name no longer
+# resolves — WITH ITS WHOLE INVENTORY (Grid.gml:1075-1080). Renaming a key here,
+# in `fiddle/items/furniture/netstor_set.toml`, or in any `spr_*netstor*` sprite
+# would delete every placed unit and everything inside it from existing saves.
+# The mod was rebranded to YADS in Beta 1.0; these keys deliberately did not move.
+#
+# WARNING: this file MOMI-merges into the game's own `fiddle/object_prototypes/furniture.toml`
+# (MergeTomlTables, R1 §2.7). It must contain ONLY the three keys below — any stray key
+# (including a [default] table) would merge into and corrupt vanilla furniture data.
+#
+# Shape copied verbatim from the vanilla chest template `basic_wood_chest_dark`
+# (R4 Q1a): size + one `.south` sprite/offset + `.interaction_chest`. All other fields
+# (collision_grid, rule_grid, placeable_locations, etc.) are intentionally omitted so they
+# inherit from the game's [default] furniture table. No interact_mask, no other interaction
+# data — interaction_chest is mutually exclusive with interaction_turn_on/bed_kind/is_journal
+# (R1 §2.2 warn).
+#
+# ⚠ NEVER ADD `child_grid` TO ANY OF THE THREE. It would silently void the whole
+# five-swing removal guard (gml/network.gml section 10). `destructable = false`
+# is not a hard veto in this engine: both readers cancel it the moment ANY child with a
+# destructable prototype stands on the node's own surface — Pick.gml:411-429 inside
+# pick_node (`if cannot_destroy { for (target_list) if …prototype.destructable {
+# cannot_destroy = false; break; } }`) and the same override in can_pick_node at
+# Pick.gml:34-52. The vanilla [default] we inherit sets `child_grid = false`, so
+# node.child_grid is undefined, the collected target list is empty and the loop never
+# runs. Give a unit a tabletop — the natural "a Storage Block you can set a lamp on"
+# request — and a player defeats the guard by putting any ordinary item on top of it,
+# on both the can_pick_node and the pick_node path, with no other symptom.
+#
+# --- SQUEEZE-BETWEEN COLLISION (Beta 1.0) ------------------------------------
+# `collision_grid` is per-cell and independent of the FOOTPRINT. The footprint
+# (`size`) still occupies all 4x2 cells: placement is refused on any cell whose
+# `node_object_id` is set (GridUtils.gml:76-77), the network BFS walks nodes,
+# interact/pick address nodes, and serialization stores nodes — none of them
+# reads collision. All `collision_grid` decides is which of those cells the
+# player's body is stopped by (Furniture.gml:674 -> GridUtils.gml:559-585).
+#
+# "0110" leaves the outer column of each row walkable and keeps a solid 2-cell
+# (16px) core. Cells are 8x8, so two units placed side by side now have an 8px
+# margin each, i.e. a 16px corridor between their solid cores. Ari's collision
+# mask is a box 8px wide (assets/shapes/Interact Masks/poly_character_mask.meta
+# .toml: kind = "box", dimensions = [8, 5], offset = [-4, -2]; obj_ari.gml:7
+# sets mask_index = spr_character_mask), and the engine's slip assist scans 4px
+# either way when it meets a collision (misc/movement_speeds/slip_size = 4,
+# misc.toml). 8 + 4 + 4 = 16 exactly, so the corridor is passable even on a
+# badly aimed approach, and the crates still feel solid when you walk into them.
+# The wider ["0100","0100"] variant (24px corridor) was rejected: an 8px core is
+# a quarter of the sprite and reads as furniture you walk through.
+#
+# 0 IS THE ONLY SAFE "no collision" VALUE. Never write "-" (= -1): that arm of
+# set_collision_grid_flag_on_node briefly forces a RoomEditorCollision.Active
+# cell to None so that remove_collision_on_node takes the destructive branch,
+# then hands the marker back as Inactive (GridUtils.gml:569-579) — it erases at
+# PLACEMENT time whatever collision the cell already carried. 0 takes the benign
+# arm and only clears `node_pathfinding_sitting` (:567-568).
+#
+# Be precise about what 0 buys, because the obvious reading is too strong: it is
+# NOT "the room's collision is safe for good". `erase_object_node_data` calls
+# remove_collision_on_node over EVERY footprint cell unconditionally, whatever
+# the collision_grid said (GridUtils.gml:367-373), so a RoomEditorCollision.None
+# cell loses its collision when the unit is removed either way. 0 preserves that
+# collision only WHILE THE UNIT IS THERE; "-" would strip it a whole placement
+# earlier and with no unit standing over it. Room-editor cells are round-trip
+# safe in both directions and are not the concern here (set_collision_on_node
+# early-returns on Active, :429-431; remove_collision_on_node restores from
+# room_data_read_cell on Inactive, :474-485). There is no refcount to underflow:
+# `node_collideable` is a plain bool array (Grid.gml:30).
+#
+# Vanilla precedent for a partial grid on a placeable: `perpetual_soup_pot`
+# ships ["011110", "011110", "011110"] on a 6x3 footprint.
+#
+# THIS IS NOT A MIGRATION. Loading a save re-derives collision from the CURRENT
+# prototype as each node is written back, so units already placed in an Alpha
+# save pick the new grid up on the next load with no save edit of any kind.
+#
+# --- NO `check_pick` (Beta 1.0, deliberately) --------------------------------
+# `check_pick = true` was tried during Beta 1.0 and REVERTED. Do not re-add it.
+# It reads as "you cannot yank the thing out from under your own feet", but both
+# readers test overlap against the RENDERER INSTANCE's shape at the renderer's
+# own position (can_pick_node Pick.gml:25-31, pick_node Pick.gml:433-439), not
+# against the 4x2 footprint. Our renderer shapes are 26x23/27/29, extending
+# 8-14px above the footprint, so the refusal reaches one to two cell rows NORTH
+# of the unit — the ordinary place to stand when breaking a 48px-tall crate.
+# Worse, the refusal is silent and it lands AFTER our own section-10 filter:
+# the filter has already counted the swing and fired the "4 more swings" toast
+# when Pick.gml:433 returns false, and that early return also preempts vanilla's
+# own "that didn't work" feedback at :455-459 — no sound, no shake, no rumble.
+# The player is promised a number and then gets nothing, forever, from a
+# position they naturally occupy. A farm animal parked on or behind the unit
+# (par_animal is in the same overlap test, and animals can walk onto the
+# margins) blocks removal the same silent way.
+#
+# Vanilla agrees, and the numbers are exact (counted over the shipped
+# assets/fiddle/object_prototypes/furniture.toml, 1490 tables): the field is
+# mentioned by FIVE tables in the whole game — `[default] = false` and the four
+# walkable terrain bridges `farm_bridge` / `gemstone_bridge_v1..v3` = true, all
+# of them 16-wide, `on_twos_only`, no inventory. All 62 prototypes that carry an
+# `[X.interaction_chest]` sub-table inherit the `[default]` false. There is no
+# `check_pick` chest in the game and this must not be the first one: "walkable
+# terrain you cannot yank out from under yourself" costs a player nothing, a
+# 54-slot chest you cannot remove while a chicken stands behind it is a support
+# ticket. The five-swing guard in section 10 of gml/network.gml is the sole
+# removal protection, which is what it was designed to be.
+
+[netstor_heart]
+	size = [4, 2]
+	collision_grid = [
+		"0110",
+		"0110",
+	]
+
+	[netstor_heart.south]
+		sprite = "spr_furniture_netstor_heart_closed"
+		offset = [16, 0]
+		# CONNECTED-state glow: an independent obj_node_renderer_top overlay, never
+		# re-applied across lid animations, no shadow-manifest entry needed.
+		# depth_offset 1 puts the glow one step in front of the unit body.
+		top_sprite = "spr_furniture_netstor_heart_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_heart.interaction_chest]
+		open_sprite = "spr_furniture_netstor_heart_opened"
+		opening_sprite = "spr_furniture_netstor_heart_opening"
+		bounce_sprite = "spr_furniture_netstor_heart_bounce"
+		inventory_size = 54
+
+[netstor_block]
+	size = [4, 2]
+	# Walkable outer columns — see the header note.
+	collision_grid = [
+		"0110",
+		"0110",
+	]
+
+	[netstor_block.south]
+		sprite = "spr_furniture_netstor_block_closed"
+		offset = [16, 0]
+		# CONNECTED-state glow — see netstor_heart.south for the full note.
+		top_sprite = "spr_furniture_netstor_block_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_block.interaction_chest]
+		open_sprite = "spr_furniture_netstor_block_opened"
+		opening_sprite = "spr_furniture_netstor_block_opening"
+		bounce_sprite = "spr_furniture_netstor_block_bounce"
+		inventory_size = 30
+
+[netstor_panel]
+	size = [4, 2]
+	# Walkable outer columns — see the header note.
+	collision_grid = [
+		"0110",
+		"0110",
+	]
+
+	[netstor_panel.south]
+		sprite = "spr_furniture_netstor_panel_closed"
+		offset = [16, 0]
+		# CONNECTED-state glow — see netstor_heart.south for the full note.
+		top_sprite = "spr_furniture_netstor_panel_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_panel.interaction_chest]
+		open_sprite = "spr_furniture_netstor_panel_opened"
+		opening_sprite = "spr_furniture_netstor_panel_opening"
+		bounce_sprite = "spr_furniture_netstor_panel_bounce"
+		inventory_size = 4

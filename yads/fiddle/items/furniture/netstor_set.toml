@@ -1,0 +1,58 @@
+# <---------NETSTOR SET ITEMS------------->
+# YADS — network storage furniture (heart / block / panel).
+#
+# ⚠ THE `netstor_*` KEYS AND `recipe_key`s ARE FROZEN. Item and object keys are
+# save-serialized by name; renaming one deletes every placed unit and everything
+# inside it from existing saves (see object_prototypes/furniture.toml).
+# Field shapes copied verbatim from vanilla `fiddle/items/furniture/basic_chest_set.toml`
+# (R4 Q3 / R3 Q4.3). recipe_key groups color/variant siblings; here each item is its own
+# recipe family, one-to-one with its object prototype in `object_prototypes/furniture.toml`.
+
+[netstor_heart]
+	description = "The anchor of a storage network. Every Block and Panel wired to it shares one pool."
+	icon_sprite = "spr_ui_item_netstor_heart"
+	name = "Storage Heart"
+	recipe_is_default = true
+	object = "netstor_heart"
+	value = { bin = "self.recipe * 1.1", store = 1250 }
+	tags = ["furniture", "netstor_set", "chest_and_storage"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 50, item = "basic_wood" },
+		{ count = 5, item = "copper_ingot" },
+		{ count = 1, item = "glass" },
+		{ hours = 0, minutes = 30 },
+	]
+	recipe_key = "netstor_heart"
+
+[netstor_block]
+	description = "An expansion crate for the network. Adjoin it to a Storage Heart to pool its space."
+	icon_sprite = "spr_ui_item_netstor_block"
+	name = "Storage Block"
+	recipe_is_default = true
+	object = "netstor_block"
+	value = { store = 400 }
+	tags = ["furniture", "netstor_set", "chest_and_storage"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 30, item = "basic_wood" },
+		{ count = 1, item = "copper_ingot" },
+		{ hours = 0, minutes = 20 },
+	]
+	recipe_key = "netstor_block"
+
+[netstor_panel]
+	description = "A slim terminal wired into the network. Browse, search and sort everything on it."
+	icon_sprite = "spr_ui_item_netstor_panel"
+	name = "Access Panel"
+	recipe_is_default = true
+	object = "netstor_panel"
+	value = { store = 150 }
+	tags = ["furniture", "netstor_set", "chest_and_storage"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 1, item = "copper_ingot" },
+		{ count = 1, item = "glass" },
+		{ hours = 0, minutes = 10 },
+	]
+	recipe_key = "netstor_panel"

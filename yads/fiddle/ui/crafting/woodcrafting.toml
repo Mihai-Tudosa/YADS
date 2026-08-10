@@ -1,0 +1,36 @@
+# YADS — one new woodcrafting sub-category.
+# MOMI-merges into the game's own `fiddle/ui/crafting/woodcrafting.toml`
+# (MergeTomlTables). MOMIidentify picks the existing [[categories]]
+# entry named "Functional"; the nested [[categories.sub_categories]] entry
+# below carries no MOMIidentify of its own, so MergeTomlTableArrays APPENDS it
+# rather than replacing anything — it lands last inside "Functional", after
+# vanilla's Automation / All Misc. Functional / Calendar / Chests & Storage /
+# Diary (append-only; no way to control position without touching vanilla
+# entries, which would be hostile to other mods). No MOMIaction is needed:
+# sub_categories is a TomlTableArray and therefore always takes the append
+# path (MOMIOperations.cs:57-59).
+#
+# Dual membership is vanilla-precedented (every vanilla chest already lists
+# under both its own set AND "Chests & Storage") — our three items
+# already carry `tags = ["furniture", "netstor_set", "chest_and_storage"]`
+# (fiddle/items/furniture/netstor_set.toml), so this sub-category lists them
+# a second time without touching that file.
+#
+# The one blocking risk — MOMI's destination-side TOML parse uses
+# TomlSerializer.Deserialize rather than Utils/Toml.ParseDocument, which could
+# replace rather than append a re-opened [[categories]] table array — was tested
+# empirically against the shipped installer (momi-cli, 0.15.1) and the live
+# game's own pristine `assets.bak.zip`: a throwaway probe mod containing only
+# this file was installed, and the resulting merged
+# `assets/fiddle/ui/crafting/woodcrafting.toml` still has all 16 [[categories]]
+# entries in original order and 111 sub_categories (110 vanilla + this one),
+# with "Digital Storage" appended last under "Functional" exactly as designed.
+# The bug does not manifest for this file's shape — safe to ship.
+
+[[categories]]
+	MOMIidentify = { name = "Functional" }
+
+	[[categories.sub_categories]]
+		name = "Digital Storage"
+		icon = "spr_ui_crafting_category_icon_netstor"
+		tags = ["netstor_set"]

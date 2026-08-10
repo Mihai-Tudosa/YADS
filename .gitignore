@@ -1,0 +1,13 @@
+# Working notes for the AI agent that maintains this repo — not part of the mod.
+CLAUDE.md
+
+# Engine research. Every file quotes the game's shipped GML source verbatim with
+# file:line citations; it is not mine to republish. Kept locally, never pushed.
+research/
+
+# Personal test-save provisioning (hard-coded farm names, family ids, local paths).
+provision_test_save.py
+
+__pycache__/
+*.pyc
+.scratch/
