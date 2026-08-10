@@ -62,8 +62,6 @@ won't connect to anything there.
 
 **Empty your units first.** The engine drops placed objects it no longer
 recognizes, together with everything inside them. Backpack items are safe.
-That's how the game treats any removed content mod, but it's worth saying
-twice for a storage mod.
 
 ## Build from source
 
