@@ -1,5 +1,7 @@
 # YADS - Yet Another Digital Storage Mod
 
+**Back up your saves before installing any mod. It's a beta.**
+
 Network storage for **Fields of Mistria**. One search bar for every crate you own.
 
 **Beta 1.0**, by mykay. Requires the [Mods of Mistria Installer](https://www.nexusmods.com/fieldsofmistria/mods/78) 0.15.1+.
@@ -55,14 +57,6 @@ won't connect to anything there.
    `mods/yads/manifest.json` exists.
 2. Run the Mods of Mistria Installer, tick **YADS**, hit Install.
 3. Play. Recipes unlock automatically, existing saves included.
-
-## Good to know
-
-- You can technically box yourself in between crates. Swing your pickaxe at
-  any adjacent unit to get out, or just sleep or leave the room.
-- The vanilla Throw key can push an item into one specific unit directly.
-  Harmless, it shows up in the network view either way.
-- Back up your saves before installing any mod. It's a beta.
 
 ## Before uninstalling
 
