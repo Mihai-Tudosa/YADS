@@ -10,6 +10,45 @@ identifiers (`prajaja_digital_storage_*`, `global.__netstor`, the
 `gml/boot.gml` / `gml/network.gml` / `gml/view.gml`. The `netstor_*` CONTENT
 keys did not move and never will.
 
+## Status — Beta 1.0 (historical; the first public release)
+
+Shipped 2026-08-10. The standing constraints it established (folder name, frozen
+`netstor_*` keys, squeeze-between collision, the `check_pick` revert) live in
+`CLAUDE.md`; what follows is the one-time work.
+
+**The rebrand.** `mod/` → `yads/`, `prajaja_digital_storage_` → `yads_`,
+`PRAJAJA_DIGITAL_STORAGE_` → `YADS_`, `global.__netstor` → `global.__yads`, GML
+files → `boot.gml` / `network.gml` / `view.gml`. Manifest: name "YADS - Yet
+Another Digital Storage Mod", author "mykay". The rename was mechanical and
+proven so (sed-reconstruct from the pre-rename files diffed byte-identical).
+
+- **Three-way loc namespace move**, atomic: `fiddle/mods/digital_storage/` →
+  `fiddle/mods/yads/`, the `l10n.meta.toml` key, and the `YADS_LOCAL_ROOT` macro.
+- **`mmapi_mod_declare` token** `"digital_storage"` → `"yads"`, which moves the
+  config + log dir to `mod_data/yads/`. The owner's two persisted toggles
+  (auto_search, value_mode) reset to defaults once. MOMI also treats the new mod
+  id as a new mod, so updaters must re-tick YADS in the installer list.
+
+**The pastel palette, and what it costs.** Value badges `.set_xy(1, -2)`; glow
+greens/reds/yellows softened to pastel (image_blend is a multiply over near-white
+art, so a zeroed channel reads neon). **Accepted tradeoff, recorded once so it is
+not rediscovered as a bug:** the pastels cost colour-blind separation. Under a
+Viénot deuteranopia simulation the bright-rung green/yellow pair goes from
+Euclidean 65 (saturated) to 41 (pastel) — about **37% worse** — and red's
+relative luminance rises 54 → 157, halving the red-vs-yellow luminance gap
+(182 → 88). Protanopia is marginally better. Green/yellow were already ambiguous
+for red-green colour-blindness, so this is a regression on the traffic-light
+metaphor, not a new failure. The aesthetics are owner-requested and stand; the
+escape hatch if reports come in is a non-colour cue (a fill-level pip, or pushing
+"empty" toward blue), not a return to primaries. Green-vs-cyan for normal vision
+also halves (230 → 120 at the bright rung), mitigated by the three units having
+distinct silhouettes.
+
+**Repo pass.** Process-archaeology comments deleted or rewritten as constraints
+(strip-comments diff proves zero code tokens changed); `DESIGN.md` → `docs/`;
+`README-FIRST-LAUNCH.md` folded into the public `README.md`; `check_symbols.py`
+and `make_art.py` de-personalised (argv/env, no hard-coded user paths).
+
 ## Status — Alpha 1.5 (historical; the last pre-public build)
 
 Shipped 2026-08-10, gates green, audit dry. What it added over 1.4:

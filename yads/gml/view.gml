@@ -64,7 +64,11 @@ function yads_open_view(_node, _scan) {
         page: 0,
         pages: 1,
         page_request: undefined,
-        sort_mode: YADS_SORT_CATEGORY,
+        // Seeded from the file, not from the macro: the sort order is persisted
+        // (yads_tap_sort writes it through), so the panel opens the way the
+        // player last left it. _config is the memo read at the top of this
+        // function and is already range-guarded by yads_config.
+        sort_mode: _config.sort_mode,
         sort_request: undefined,
         filter: YADS_FILTER_ALL,
         filter_request: undefined,
@@ -86,6 +90,7 @@ function yads_open_view(_node, _scan) {
         search_plate: undefined,
         search_node: undefined,
         search_hint: undefined,
+        search_clear: undefined,        // the X inside the box, shown only when it has text
         filter_plate: undefined,
         filter_buttons: [],
         filter_icons: [],               // the icon sprite inside each button
@@ -159,7 +164,6 @@ function yads_open_view(_node, _scan) {
     });
 
     yads_build_widgets(_view);
-    yads_apply_sort_label(_view);
 
     // Before the first projection, because the projection is what fills them:
     // yads_badge_slot is called from project's own slot loop
@@ -562,7 +566,17 @@ function yads_build_bottom_bar(_view, _menu, _pilot, _bar_width) {
         .set_size(58, 14)
         .set_align(Align.RightIn, Align.Middle)
         .set_x(-1)
-        .add_text_label(YADS_LOCAL_ROOT + "sort_category",
+        // The PERSISTED mode's key, not a baked "sort_category": the view is
+        // seeded from the config file, so a hardcoded label would spend the
+        // first frame lying about an order the grid is already in. Every key
+        // this can produce is measured in ui.toml against the 52px budget above.
+        //
+        // This is the ONLY open-time write of this label - add_text_label ends
+        // in set_key (Node.gml:1878), which is exactly what yads_apply_sort_label
+        // does, so calling that at open too would have been the same string
+        // written twice. From here on the tick owns it: it repaints the label
+        // whenever it applies a sort_request (boot.gml section 3c).
+        .add_text_label(yads_sort_key(_view.sort_mode),
             COMMON_LUT, CommonLutIndex.Dark)
         .set_tap_sound("SoundEffects/UI/UIExtraPositiveClick")
         .add_hover_outline()
@@ -769,7 +783,12 @@ function yads_build_search_strip(_view, _menu, _pilot, _bar_width) {
     _view.autosearch_button.set_think_callback(
         yads_autosearch_think, [_view]);
 
-    var _search_width = max(48, _strip_width - 19);
+    // 19 is the toggle plus its gap, taken off the strip. No floor here: the
+    // strip is already floored at 120 above, so the narrowest box this can
+    // produce is 101px - the minspec case anyone re-deriving the budget below
+    // wants, and the reason the old max(48, ...) was unreachable arithmetic
+    // that made the worst case read as 26px of query room instead of 79.
+    var _search_width = _strip_width - 19;
 
     // The width budget the LINE EDITOR enforces by hand. It is the same number
     // that goes into set_max_width below, kept on the view because once the
@@ -778,7 +797,26 @@ function yads_build_search_strip(_view, _menu, _pilot, _bar_width) {
     // verbatim (Node.gml:1099-1109) and the ONLY truncation in the whole engine
     // is the driver's own reject-the-keystroke test (Anchor.gml:477-479). Forget
     // this and a long query renders straight out through the plate.
-    _view.search_max_width = _search_width - 8;
+    //
+    // 22, not 8, and every one of them measured rather than guessed: 3 for the
+    // text node's own LeftIn inset, 14 for the clear button's visible plate at
+    // the right edge (its opaque alpha bbox is 2,2..16,16 of an 18x18 sprite -
+    // see the bottom of this function), 3 for what sits right of that plate
+    // (set_x(-1) plus the sprite's own 2px transparent margin), and 2 of gap.
+    // Concretely: RightIn puts the button's node at plate_right-19..plate_right-1
+    // (anchor_utils.gml:232-239), so its ink starts at plate_right-17, while the
+    // text can reach plate_left + 3 + (_search_width - 22) = plate_right - 19.
+    // The clearance is real but it is 2px, not the 4 this comment used to claim.
+    // At the shipped _bar_width of 228 the query budget is 111px, down from the
+    // 125px of the -8 days - about two characters - and 79px at minspec.
+    //
+    // It is charged UNCONDITIONALLY even though the X only appears once there is
+    // a query, because the budget is what the editor measures every keystroke
+    // against - a budget that grew while the box was empty would let the first
+    // characters land in space the X is about to occupy, and the engine's own
+    // render order draws Text after Sprite at equal depth, so they would come out
+    // on top of the button rather than clipped by it.
+    _view.search_max_width = _search_width - 22;
 
     _view.search_plate = ANCHOR.nine_slice(_strip)
         .set_sprites_from_key("spr_ui_text_input_box")
@@ -857,6 +895,93 @@ function yads_build_search_strip(_view, _menu, _pilot, _bar_width) {
         .set_scale(1, 9)
         .set_color(c_black)
         .set_enabled(false);
+
+    //
+    // THE CLEAR BUTTON. Three decisions, each of which has exactly one right
+    // answer here.
+    //
+    // IT IS A CHILD OF THE PLATE, not of the strip - AND THAT ALONE DOES NOT
+    // MAKE A CLICK ON IT COUNT AS "INSIDE THE BOX". The blur test in
+    // yads_search_think is a bbox test on ONE node, not a hierarchy walk, and
+    // nothing in ANCHOR clips a child to its parent's rect. This sprite is
+    // 18x18 in a 14px-tall plate, and Align.Middle resolves to
+    // floor((14 - 18) / 2 + 0.5) = -2 (anchor_utils.gml:267-273), so the raw
+    // node spans plate_y-2 .. plate_y+16: two rows of it stick out above the
+    // plate and two below, which is where the hovered/tapped art paints its
+    // ring. Left as-is, a click in those four rows both cleared the query and
+    // blurred the field, and 1-2px above a box that draws nothing there wiped
+    // the query from what looks like empty strip.
+    //
+    // TWO HALVES CLOSE IT, and both are load-bearing.
+    //
+    //   * THE HITBOX IS TRIMMED TO THE ART, set_bbox_offset(2, 2, -2, -2)
+    //     below. process_node_bbox adds those four numbers to the cached rect
+    //     and touches nothing else (anchor_utils.gml:296-308) - the sprite is
+    //     still drawn from cache_x/cache_y at 18x18, so this shrinks the target
+    //     without scaling a pixel. set_size CANNOT do this job: a plain sprite
+    //     node's width/height are recomputed from spr_* * scale on every dirty
+    //     pass (Anchor.gml:751-758), so a set_size(14, 14) is silently undone.
+    //     The numbers are the art's own alpha bbox (2,2)-(16,16), i.e. the
+    //     hitbox is now exactly the visible plate, and it lands wholly inside
+    //     the text plate's rect. Vanilla drives its own widgets this way
+    //     (anchor_utils.gml:908, Scroller.gml:31, ToolbarMenu.gml:229).
+    //     What it does not move is the ring: hovered/tapped are 18x18 of opaque
+    //     art, so a hover still paints 2px over the plate's border - it just
+    //     can no longer be triggered from outside the button.
+    //   * THE BLUR TEST NAMES BOTH NODES ANYWAY (yads_search_think). The trim
+    //     above is a fact about this sprite at this alignment; "a click on the
+    //     X is not a click outside the box" is the contract, and it belongs
+    //     where it is enforced rather than being inferred from an 18x18 asset
+    //     staying 18x18 forever.
+    //
+    // IT IS REGISTERED LAST, AND THAT IS NOT WHAT MAKES IT WIN THE CLICK - the
+    // claim this comment carried through Beta 1.1, which cost the button both its
+    // hover and its tap in-engine. ANCHOR walks nodes in REVERSE registration
+    // order (Anchor.gml:370), so the last node built is the first OFFERED the
+    // hover - and then the plate, visited after it, takes that hover straight
+    // back, because hover_node releases the previous holder unconditionally
+    // (:1806, :1862-1864) and only one node may hold it. Being offered first is
+    // being stolen from afterwards. Two overlapping hover listeners cannot both
+    // work by ordering alone in either direction; what makes this one win is
+    // yads_search_think closing the plate's gate for the frames the pointer is
+    // over this button, and the full argument lives there. Registration order
+    // still matters for the SAME-FRAME seam that fix depends on: the text node
+    // carrying the poll must sit between the plate and this button, which it
+    // does, so do not move either block past it.
+    //
+    // IT IS A PLAIN SPRITE NODE, NOT A NINE-SLICE, and this one is a crash-class
+    // distinction rather than a style one. spr_ui_button_close_{main,hovered,
+    // tapped} are SINGLE-FRAME 18x18 images - their meta.toml carries no
+    // frame_len, unlike spr_ui_button (3x3, frame_len 9) and every other
+    // nine-sliceable key in that folder. Nine-slice drawing indexes frames
+    // 0*frame_count .. 8*frame_count (Anchor.gml:918-1000) and set_sprite
+    // divides frame_count by 9 for a nine-slice node (Node.gml:1569-1571), and
+    // it sizes the corners from spr_width, so a 14x14 nine-slice off an 18x18
+    // sprite would draw its interior at width 14 - 36 = -22 (the same trap
+    // documented over the caret above). As a plain sprite node the art is used
+    // exactly as drawn: the node self-sizes to 18x18 (Anchor.gml:751-758), the
+    // main state's opaque plate is the inner 14x14 (alpha bbox 2,2..16,16) and
+    // the 2px margin is where the hovered and tapped states put their ring.
+    //
+    // set_sprites_from_key still gives it the full six-state set: load_button_
+    // sprites resolves enabled from _main, pressed from _tapped, hovered from
+    // _hovered, and falls back to enabled for locked and the rest
+    // (anchor_utils.gml:2502-2515). The key is absent from ui/misc.toml's
+    // button_sprite_prefixes, which costs one DEBUG-only warn at first use and
+    // nothing at runtime; that file is vanilla's and not ours to edit.
+    //
+    // No tooltip: the strip's width budget is spent (see build_bottom_bar), and
+    // an X in a search box needs no caption in any locale.
+    _view.search_clear = ANCHOR.sprite(_view.search_plate)
+        .set_sprites_from_key("spr_ui_button_close")
+        .set_align(Align.RightIn, Align.Middle)
+        .set_x(-1)
+        .set_bbox_offset(2, 2, -2, -2)   // hitbox = the drawn plate, see above
+        .set_tap_sound("SoundEffects/UI/UIExtraPositiveClick")
+        .set_tap_callback(yads_tap_search_clear, [_view])
+        .add_to_pilot(_pilot)
+        .set_enabled(false)
+        .set_unlocked(false);   // both flags - see the note in yads_search_think
 }
 
 //
@@ -1676,9 +1801,30 @@ function yads_tap_next(_view) {
     yads_request_page(_view, _view.page + 1);
 }
 
+// The one request recorder that ALSO writes a file, because the sort order is
+// both view state and a preference. The request half is untouched - the tick is
+// still what applies it, resets the page, dirties the projection and repaints
+// the label, and it is still the only writer of _view.sort_mode.
+//
+// THE REQUEST IS WHAT GETS PERSISTED, not _view.sort_mode: the tick has not run
+// yet, so sort_mode is still the OLD mode here and writing it would save the
+// order the player just cycled away from.
+//
+// ACCEPTED, because the alternative is worse: tap sort and close the panel on
+// the SAME frame and the file keeps a mode the grid never rendered - the tick
+// returns at its closing guard (boot.gml section 3b) before it ever reaches the
+// request block. One cycle step at worst, and self-consistent on the next open,
+// which is the only place the number is read. Deferring the write to the tick
+// instead would lose the preference outright on that same frame.
 function yads_tap_sort(_view) {
     if (_view.closing == true) { return; }
     _view.sort_request = wrap(_view.sort_mode + 1, YADS_SORT_LEN);
+
+    var _cfg = yads_config();
+    _cfg.sort_mode = _view.sort_request;
+
+    mmapi_config_write(YADS_MOD,
+        YADS_CONFIG_VERSION, _cfg);
 }
 
 // Tapping the ACTIVE group clears back to All. Every player expects a
@@ -1810,6 +1956,67 @@ function yads_tap_search(_view) {
     if (_view.editing == true) { return; }
 
     yads_search_focus(_view);
+}
+
+// The clear X. Empties the box and leaves the editor in the state a fresh focus
+// would: caret at 0, no selection, caret solid.
+//
+// IT DOES NOT TOUCH _view.query, AND MUST NOT. The query is polled off the text
+// node by the tick (boot.gml section 3d), which is the single place that decides
+// the view has a new filter and re-projects - so writing set_text("") here is
+// the whole change, and the grid comes back on the next frame through the same
+// path a keystroke uses. A second writer here would race the poll and could
+// re-project against a string the node no longer holds.
+//
+// It does not blur, and it does not focus either: whichever side of focus the
+// player was on is where they stay. That is not a property of parentage - see
+// the geometry note over the button in build_search_strip - it is held up by
+// the trimmed hitbox and by the blur test in yads_search_think naming this node
+// alongside the plate.
+function yads_tap_search_clear(_view) {
+    if (_view.closing == true) { return; }
+
+    var _node = _view.search_node;
+    if (_node == undefined) { return; }
+
+    _node.set_text("");
+    _view.caret = 0;
+    _view.sel_anchor = 0;
+    _view.blink = 0;
+
+    yads_caret_paint(_view);
+
+    // AND MOVE THE PAD CURSOR OFF THE BUTTON THAT IS ABOUT TO VANISH. On a pad
+    // the tap is not deferred to release (Anchor.gml:414-418), so this callback
+    // runs mid-walk and the text node's think - later in the same reverse walk -
+    // locks and disables the X on this very frame. set_unlocked(false) releases
+    // the hover (Node.gml:581-583), the pilot's position keeps pointing at the
+    // now-invalid cell, Pilot.get() returns undefined for it (Pilot.gml:88-93)
+    // and try_pilot_hover no-ops (Anchor.gml:1911-1921): nothing is highlighted,
+    // and since the X is the last cell of its row, East is a dead press under
+    // the default Freeze overflow (Pilot.gml:331-337, :353-355). The player has
+    // to guess West/North/South to get the cursor back.
+    //
+    // try_force_select is the engine's own one-call re-seat: it finds the node
+    // in the pilot map, moves the cursor onto it and hovers it (Pilot.gml:238-249).
+    // The try_ form, because it RETURNS false where force_select asserts (:261).
+    // The plate is the right landing spot - it is the cell the X sits on top of
+    // and the control the player was just using.
+    //
+    // ONLY UNDER DIRECTIONAL CONTROL. In point control the hover belongs to the
+    // mouse and is recomputed from the pointer every frame anyway, and
+    // hover_node would additionally force_select through the pilot
+    // (Anchor.gml:1816-1817) - i.e. a mouse click would teleport the pad cursor.
+    //
+    // RESIDUAL, accepted: deleting the LAST CHARACTER FROM THE KEYBOARD while
+    // the pad cursor rests on the X strands it in the same way, and that path
+    // does not come through here. One West/North/South press recovers it.
+    if (ANCHOR.in_directional_control()) {
+        var _plate = _view.search_plate;
+        if (_plate != undefined && _plate.pilot != undefined) {
+            _plate.pilot.try_force_select(_plate);
+        }
+    }
 }
 
 //
@@ -2048,6 +2255,105 @@ function yads_search_think(_view) {
         _hint.set_enabled(_view.editing != true && string_trim(_node.get_text()) == "");
     }
 
+    // The clear X, the hint's exact complement: shown whenever there is anything
+    // to clear, focused or not. Driven from here rather than from the button's
+    // own think for the reason a disabled node cannot think itself back on
+    // (Anchor.gml:374) - this poll runs on the text node, which is never
+    // disabled. Same string_trim as the hint so a query of pure spaces, which
+    // the tick treats as empty, offers no button to clear it with.
+    //
+    // BOTH FLAGS, NOT JUST enabled. A disabled node is skipped by the mouse
+    // (Anchor.gml:374-377 tests safe_enabled) but NOT by the gamepad: the pilot's
+    // position_is_valid reads safe_unlocked alone (Pilot.gml:296-307), and
+    // try_pilot_hover then hovers whatever the cursor landed on with no
+    // enabled test of its own (Anchor.gml:1911-1921). Enabled-only would leave a
+    // permanent invisible stop in this row for every pad player whose query is
+    // empty - which is most of the time. set_unlocked also releases the hover if
+    // the pointer happened to be on the X when the query emptied, which is
+    // exactly the frame after a successful clear.
+    //
+    // AND THE UNLOCK IS GATED ON THE PLATE, because the two flags are NOT
+    // symmetrical about ancestors. set_unlocked defaults to personal = true and
+    // ASSIGNS (Node.gml:578-580), so an ungated poll re-unlocks this node one
+    // frame after canvas.lock() locked the whole tree, leaving the X as the only
+    // pilot-navigable node in a dead menu for the length of the fade.
+    // set_enabled has no such hole - it short-circuits against the node's own
+    // enabled flag (Node.gml:642-644, :678-680) - so only the unlock needs the
+    // guard. The plate's safe_unlocked is the true reading of "an ancestor lock
+    // is in force": canvas.lock() propagates set_unlocked(false, false) to every
+    // descendant, so it goes false in the same call. _view.closing would NOT be
+    // enough - AnchorMenu.request_hide locks the canvas without our close path
+    // ever running (AnchorMenu.gml:267-278) - and is in any case already
+    // enforced by this think's own guard above.
+    var _clear = _view[$ "search_clear"];
+    if (_clear != undefined) {
+        var _clearable = string_trim(_node.get_text()) != "";
+        _clear.set_enabled(_clearable);
+        _clear.set_unlocked(_clearable && _view.search_plate.safe_unlocked);
+    }
+
+    // ...AND THE PLATE STOPS LISTENING WHILE THE POINTER IS ON THE X.
+    //
+    // ANCHOR grants hover to AT MOST ONE node - `current_hovered_node` - and
+    // hover_node RELEASES the previous holder unconditionally (Anchor.gml:1806),
+    // wiping its in_hover, in_tap AND tap_is_deferred (:1862-1864). The node walk
+    // runs in REVERSE registration order (:370), so of two OVERLAPPING hover
+    // listeners the one registered FIRST is visited LAST and takes the hover away
+    // from the other within the same frame. This button's hitbox lies wholly
+    // inside the plate's rect and the plate was built first, so without this line
+    // the plate stole the X's hover in every frame where `mouse_is_active` held
+    // (:387) - which is every frame the pointer moved and every frame a mouse
+    // button was down (:231). Both of Beta 1.1's reported symptoms are that one
+    // theft:
+    //
+    //   * HOVER FLICKER. The X's own art is chosen during the X's own step
+    //     (:600-618; set_sprites_from_key points key_sprite_target at itself,
+    //     Node.gml:1594), which runs BEFORE the plate's theft later in the same
+    //     walk - so the hovered sprite appeared for exactly the frames the GUI
+    //     mouse position changed and dropped the instant the pointer stood still.
+    //   * DEAD CLICK. On the press frame the X won the hover, took the press
+    //     (:404 - take_tap MUTES it, Input.gml:270, :421-429) and deferred it to
+    //     the release (:414-418). The plate's theft, later in that same frame,
+    //     cleared tap_is_deferred before the release ever arrived, and the muted
+    //     press left the plate with nothing to fire either: the click did
+    //     nothing at all, not even re-focus the field.
+    //
+    // listen_for_hovers IS that gate (Anchor.gml:377) and touches nothing else -
+    // not the lock, not enabled, not the plate's own art (chosen outside the
+    // gate, :582-618), not pad navigation (position_is_valid reads safe_unlocked,
+    // Pilot.gml:298-307). Vanilla drives the flag exactly this way, per frame
+    // from a think callback (anchor_utils.gml:1004-1014).
+    //
+    // THE ORDER MAKES IT SAME-FRAME. This think lives on the text node, which is
+    // registered after the plate and before the X, so the reverse walk reaches
+    // the X's hover test, then this poll, then the plate: the flag written here
+    // is read by the plate later in the very same frame, never one late.
+    //
+    // POINT CONTROL ONLY. Under directional control the pointer sits wherever it
+    // was abandoned, and a pad's tap is delivered through this same gate (:404) -
+    // closing it because the mouse happens to rest on the X would make the search
+    // plate untappable with a pad.
+    //
+    // is_unlocked() - safe_unlocked && safe_enabled - is the engine's own test for
+    // "this node may take the hover" (:374, :377), so a hidden or locked X hands
+    // the plate straight back. That is also what preserves the canvas-lock
+    // property: while the menu closes the X is locked (the poll above gates it on
+    // the plate), this reads false, and the plate resumes listening behind its own
+    // safe_unlocked - which the same lock has already cleared. No transition frame
+    // unlocks anything.
+    //
+    // The pointer resting where the X APPEARS is the one residual: the acquire at
+    // :387 needs mouse_is_active, so until the mouse moves or clicks the plate
+    // keeps a hover it can no longer release itself. That is what the box looks
+    // like today with the pointer inside it, it costs no input (the press frame
+    // sets mouse_is_active and the X takes the hover and the tap), and it heals on
+    // the first pixel of movement.
+    var _mouse_on_clear = ANCHOR.in_point_control()
+        && _clear != undefined
+        && _clear.is_unlocked()
+        && ANCHOR.point_in_node(_clear, MOUSE_GUI_X, MOUSE_GUI_Y);
+    _view.search_plate.listen_for_hovers(!_mouse_on_clear);
+
     if (_view.editing != true) { return; }
 
     // BLUR PATHS FIRST, all four of them, and all through search_blur - which
@@ -2097,11 +2403,31 @@ function yads_search_think(_view) {
         return;
     }
 
-    // Clicking anywhere outside the box gives focus back to the grid.
+    // Clicking anywhere outside the box gives focus back to the grid - and the
+    // clear X is INSIDE the box for this purpose, whatever its geometry says.
+    // Its hitbox is trimmed to sit within the plate's rect (see the clear
+    // button in build_search_strip), so today this second test never fires;
+    // it is written anyway because the alternative is an unstated dependency
+    // on the X's bbox being a subset of the plate's, and a future re-align, a
+    // re-cut sprite or a dropped bbox offset would silently turn every clear
+    // into a clear-and-blur with nothing to catch it.
+    //
+    // is_unlocked() is exactly the engine's own condition for this node to have
+    // received the click - safe_unlocked && safe_enabled (Node.gml:603-605),
+    // the pair tested by the hover walk at Anchor.gml:374-377 - so a click in
+    // the X's rect while the query is empty, where there is no button to press,
+    // still blurs the way clicking bare plate border does.
     if (mouse_check_button_pressed(mb_left)
         && !ANCHOR.point_in_node(_view.search_plate, MOUSE_GUI_X, MOUSE_GUI_Y)) {
-        yads_search_blur(_view);
-        return;
+        var _clear_x = _view[$ "search_clear"];
+        var _on_clear = _clear_x != undefined
+            && _clear_x.is_unlocked()
+            && ANCHOR.point_in_node(_clear_x, MOUSE_GUI_X, MOUSE_GUI_Y);
+
+        if (!_on_clear) {
+            yads_search_blur(_view);
+            return;
+        }
     }
 
     // Still focused: this is where the editor lives.
@@ -2126,8 +2452,8 @@ function yads_search_edit(_view, _node) {
     var _len = string_length(_text);
 
     // Clamp before anything reads them. The string can move under the editor -
-    // a re-focus, a game update, a future "clear search" button - and every
-    // string_copy below assumes both indices are inside it.
+    // a re-focus, the clear X, a game update - and every string_copy below
+    // assumes both indices are inside it.
     _view.caret = clamp(_view.caret, 0, _len);
     _view.sel_anchor = clamp(_view.sel_anchor, 0, _len);
 
@@ -2152,6 +2478,15 @@ function yads_search_edit(_view, _node) {
     // _typed test catches every AltGr combo that emits a glyph, but X, C and V
     // emit NOTHING under AltGr on Romanian-standard, German and Polish layouts,
     // so an accidental AltGr+X reaches the cut arm below and empties the query.
+    //
+    // THE SAME HOLE COVERS THE FOUR EDITING COMBOS, and by a wider margin: Left,
+    // Right, Backspace and Delete emit no glyph under ANY layout, so _typed is
+    // empty for them however Alt is held. On those three layouts AltGr+Backspace
+    // therefore eats a whole word instead of one character, AltGr+Delete eats the
+    // word to the right, and AltGr+arrow jumps a word instead of a character.
+    // Same class, same cause, and the list has to name them or the next reader
+    // takes "X, C and V" for the complete set.
+    //
     // The obvious guard is `&& !keyboard_check(vk_alt)`, on the reasoning that
     // vk_alt is a stock GameMaker constant this corpus merely never names.
     //
@@ -2244,8 +2579,21 @@ function yads_search_edit(_view, _node) {
     // Left/right with a live selection and no shift COLLAPSE to the selection's
     // near edge instead of stepping - the behaviour every text field has, and
     // the reason a player can undo a Ctrl+A with one arrow press.
+    //
+    // WITH CTRL HELD THEY JUMP A WORD, and the branch is INSIDE the arm rather
+    // than the arm inside an `if (_combo)`. yads_edit_repeat is a state machine
+    // that carries repeat_key across frames, so it has to be asked about every
+    // key on every frame: skip the call for one frame - which is exactly what
+    // wrapping the arms in a modifier test would do the moment Ctrl goes down or
+    // comes up mid-hold - and the release edge is missed, ownership is never
+    // handed back, and the arrow stops repeating for the rest of the hold.
+    //
+    // Ctrl+Shift extends the selection for free: only the caret moves here, and
+    // the shared `if (!_shift)` line below is what collapses the anchor onto it.
     if (yads_edit_repeat(_view, vk_left)) {
-        if (!_shift && _view.sel_anchor != _view.caret) {
+        if (_combo) {
+            _view.caret = yads_word_left(_text, _view.caret);
+        } else if (!_shift && _view.sel_anchor != _view.caret) {
             _view.caret = min(_view.caret, _view.sel_anchor);
         } else {
             _view.caret = max(0, _view.caret - 1);
@@ -2255,7 +2603,9 @@ function yads_search_edit(_view, _node) {
     }
 
     if (yads_edit_repeat(_view, vk_right)) {
-        if (!_shift && _view.sel_anchor != _view.caret) {
+        if (_combo) {
+            _view.caret = yads_word_right(_text, _view.caret);
+        } else if (!_shift && _view.sel_anchor != _view.caret) {
             _view.caret = max(_view.caret, _view.sel_anchor);
         } else {
             _view.caret = min(_len, _view.caret + 1);
@@ -2279,12 +2629,27 @@ function yads_search_edit(_view, _node) {
     // DELETION. A selection is what gets deleted whichever key asked; with no
     // selection, backspace takes the character before the caret and delete the
     // one at it.
+    //
+    // WITH CTRL HELD THEY EAT A WORD, expressed as "select the word, then delete
+    // the selection" rather than as a second deletion path: yads_edit_delete
+    // already deletes [min, max) and already reports "nothing to delete" by
+    // returning undefined, so stretching the anchor to the word boundary reuses
+    // all of it - including the caret placement and the empty-at-the-end guard,
+    // which is what makes Ctrl+Backspace at position 0 a no-op instead of an
+    // off-by-one. Only with an EMPTY selection: a Ctrl held over a live
+    // selection must still delete exactly what is highlighted.
     if (yads_edit_repeat(_view, vk_backspace)) {
+        if (_combo && _view.sel_anchor == _view.caret) {
+            _view.sel_anchor = yads_word_left(_text, _view.caret);
+        }
         var _after_bs = yads_edit_delete(_view, _text, true);
         if (_after_bs != undefined) { _text = _after_bs; _moved = true; }
     }
 
     if (yads_edit_repeat(_view, vk_delete)) {
+        if (_combo && _view.sel_anchor == _view.caret) {
+            _view.sel_anchor = yads_word_right(_text, _view.caret);
+        }
         var _after_del = yads_edit_delete(_view, _text, false);
         if (_after_del != undefined) { _text = _after_del; _moved = true; }
     }
@@ -2458,6 +2823,61 @@ function yads_edit_delete(_view, _text, _before) {
     _view.caret = _lo;
     _view.sel_anchor = _lo;
     return string_copy(_text, 1, _lo) + string_copy(_text, _hi + 1, _len - _hi);
+}
+
+//
+// 3c-i. WORD BOUNDARIES, for Ctrl+arrow and Ctrl+backspace/delete
+//
+// THEY TAKE THE STRING, NEVER THE NODE. yads_search_edit works on a local
+// `_text` that can already differ from _node.get_text() by the time these are
+// called - a Ctrl+X or a Ctrl+V earlier in the same frame rewrote the local and
+// the node is not written back until the end of the function. Reading the node
+// here would compute a boundary in the previous frame's string and hand the
+// caret an index into a string that no longer exists.
+//
+// CHARACTER CLASSES, not Unicode categories: the engine's string surface is
+// string_char_at / string_copy / string_pos / string_length and nothing else
+// (string_ord_at and chr appear nowhere in the corpus, so neither can be
+// assumed to exist in Fabricator). A membership test against a literal
+// separator set is therefore both the simplest and the only portable spelling.
+// The set is space plus the punctuation that actually occurs in Mistria item
+// names and in a typed query - hyphen, underscore, comma, dot, slash, brackets.
+// Everything else, letters and digits alike, is word material.
+function yads_word_is_sep(_text, _index) {
+    static SEPS = " -_,./()";
+
+    // Off either end counts as a separator, which is what makes the loops below
+    // stop at the string's edges without a second test.
+    if (_index < 1 || _index > string_length(_text)) { return true; }
+    return string_pos(string_char_at(_text, _index), SEPS) > 0;
+}
+
+// The caret index at the start of the word to the LEFT. The caret counts
+// characters BEFORE it, so the character to its left is at 1-based index
+// `caret`: skip separators first (so a caret sitting just past a space jumps the
+// space rather than stalling on it), then skip the word, and stop on the
+// separator that precedes it.
+function yads_word_left(_text, _caret) {
+    var _i = clamp(_caret, 0, string_length(_text));
+
+    while (_i > 0 && yads_word_is_sep(_text, _i)) { _i -= 1; }
+    while (_i > 0 && !yads_word_is_sep(_text, _i)) { _i -= 1; }
+
+    return _i;
+}
+
+// The caret index at the start of the NEXT word to the right - the mirror, and
+// deliberately "next word start" rather than "end of this word", which is what
+// every browser, editor and OS text field does with Ctrl+Right. The character to
+// the caret's right is at index caret + 1.
+function yads_word_right(_text, _caret) {
+    var _len = string_length(_text);
+    var _i = clamp(_caret, 0, _len);
+
+    while (_i < _len && !yads_word_is_sep(_text, _i + 1)) { _i += 1; }
+    while (_i < _len && yads_word_is_sep(_text, _i + 1)) { _i += 1; }
+
+    return _i;
 }
 
 // Put the caret and the selection band where the string says they go.
@@ -2726,6 +3146,7 @@ function yads_teardown(_view) {
     _view.search_plate = undefined;
     _view.search_node = undefined;
     _view.search_hint = undefined;
+    _view.search_clear = undefined;
     _view.filter_buttons = [];
     _view.filter_icons = [];
     _view.filter_prev = undefined;

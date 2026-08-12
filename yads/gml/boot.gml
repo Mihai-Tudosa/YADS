@@ -52,7 +52,7 @@
 // for why a blocked swing still REACHES us and is therefore countable.
 
 #macro YADS_MOD "yads"
-#macro YADS_VERSION "Beta 1.0"
+#macro YADS_VERSION "Beta 1.1"
 
 // Bumped whenever the shape of the config struct changes. mmapi_config_read_valid
 // returns {} for any other stamp (mmapi.gml:498-512), so an old file degrades to
@@ -96,8 +96,17 @@
 // STACK_VALUE sits immediately after VALUE, not at the end, because the two are
 // the same question at two scales - "what is one of these worth" and "what is
 // this pile worth" - and a cycle button is read by what its NEXT press gives
-// you. Nothing persists a sort mode (it is per-view state, unlike value_mode),
-// so renumbering COUNT to make room costs nothing anywhere.
+// you.
+//
+// THESE NUMBERS ARE NOW A SAVE FORMAT, so the order is no longer free. The
+// config file stores sort_mode as the raw INTEGER (yads_config below,
+// yads_tap_sort in view.gml), and mmapi_config_number only range-guards it -
+// it cannot know the meaning of 3 moved. Renumber, reorder or remove any
+// YADS_SORT_* macro and every existing player's saved preference silently
+// becomes a different sort order: the persisted integer means "position in the
+// cycle as this version numbered it", nothing more. Adding a mode at the END
+// and bumping LEN is the one edit that is still free. Anything else needs a
+// config migration, or the deliberate acceptance that saved values reinterpret.
 #macro YADS_SORT_CATEGORY 0
 #macro YADS_SORT_NAME 1
 #macro YADS_SORT_VALUE 2
@@ -296,10 +305,24 @@ function yads_config() {
     // the file rather than resetting every time a panel opens. mmapi_config_number
     // range-guards to [0, VALUE_LEN-1] and falls back to the default for anything
     // else, so a hand-edited 7 cannot reach the cycle arithmetic.
+    // sort_mode: the order the grid opens in. A preference for the same reason
+    // value_mode is one - it says how you like to read a storage grid - and the
+    // one setting a player re-picks on every single panel until it persists.
+    // Same range guard, so a hand-edited 9 cannot reach the cycle arithmetic or
+    // the label switch.
+    //
+    // ADDING A KEY DOES NOT NEED A CONFIG-VERSION BUMP, and MUST NOT GET ONE:
+    // mmapi_config_read_valid discards a file whose version differs, so a bump
+    // would silently reset auto_search and value_mode for every existing player
+    // to buy nothing. A new key at the SAME version is self-healing -
+    // mmapi_config_number returns the default for a key the file does not have,
+    // and the unconditional write below materialises it on the spot.
     _cfg = {
         auto_search: mmapi_config_bool(_source, "auto_search", true),
         value_mode: mmapi_config_number(_source, "value_mode",
             YADS_VALUE_OFF, 0, YADS_VALUE_LEN - 1),
+        sort_mode: mmapi_config_number(_source, "sort_mode",
+            YADS_SORT_CATEGORY, 0, YADS_SORT_LEN - 1),
     };
 
     mmapi_config_write(YADS_MOD,

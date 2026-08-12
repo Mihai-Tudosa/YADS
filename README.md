@@ -4,7 +4,7 @@
 
 Network storage for **Fields of Mistria**. One search bar for every crate you own.
 
-**Beta 1.0**, by mykay. Requires the [Mods of Mistria Installer](https://www.nexusmods.com/fieldsofmistria/mods/78) 0.15.1+.
+**Beta 1.1**, by mykay. Requires the [Mods of Mistria Installer](https://www.nexusmods.com/fieldsofmistria/mods/78) 0.15.1+.
 
 If you've played modded Minecraft or Terraria you already know the idea. This is
 my love letter to Applied Energistics 2, Refined Storage and Magic Storage:
@@ -35,10 +35,13 @@ won't connect to anything there.
   Withdraw and deposit exactly like a chest.
 - A real search box with full text editing, and an auto-focus toggle so it's
   ready the moment the panel opens.
+- One tap on the X empties the search box, and Ctrl with the arrow keys jumps a
+  whole word at a time. Ctrl+Backspace and Ctrl+Delete eat one too.
 - 16 category filters, including "Museum needs" for what the museum still wants.
 - Value badges on every stack (off, per stack, or per item). Big numbers
   abbreviate to things like `12.3k`.
-- Five sort modes: Category, Name, Value, Stack value, Count.
+- Five sort modes: Category, Name, Value, Stack value, Count. Your pick sticks,
+  so every panel opens the way you left it.
 - Quick-stack your backpack into the network with one button.
 - Crafting stations pull from the network automatically. That one is vanilla
   behavior: the units are real chests, so they just qualify.
