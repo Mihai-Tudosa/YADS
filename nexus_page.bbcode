@@ -12,37 +12,47 @@ If you've played modded Minecraft or Terraria you already know the idea. This is
 [size=5][b]The units[/b][/size]
 
 [list]
-[*][b]Storage Heart[/b] (50 Wood, 5 Copper Ingot, 1 Glass). The brain. One per network. Interact for a status report.
+[*][b]Storage Heart[/b] (50 Wood, 5 Copper Ingot, 1 Glass). The brain. One per network.
 [*][b]Storage Block[/b] (30 Wood, 1 Copper Ingot). 30 slots each. Chain as many as you want.
 [*][b]Access Panel[/b] (1 Copper Ingot, 1 Glass). The terminal. Open it to browse the network.
+[*][b]Remote Access Panel[/b] (5 Ruby, 5 Sapphire, 5 Copper Ingot, 5 Iron Ingot, 1 Access Panel). Browse from anywhere.
 [/list]
 
-All three are crafted at the Woodcrafting Station from crafting level 1. You will find them under "Chests & Storage" and under their own "Digital Storage" category.
+Crafted at the Woodcrafting Station, under "Chests & Storage" and their own "Digital Storage" category.
 
-Place units so they touch and they link up. Connected units glow (blocks tint green, yellow or red by how full they are), a unit that missed the chain shows a sad face. Each room is its own separate network, so the farm and the farmhouse each need their own Heart. Don't place units on top of tables, they won't connect to anything there.
+Place units so they touch and they link up. Connected units glow (blocks tint green, yellow or red by how full they are), a disconnected one shows a sad face. Each room is its own network, so the farm and the farmhouse each need their own Heart. Don't place units on tables.
 
-[size=5][b]Features[/b][/size]
+[size=5][b]Remote access[/b][/size]
 
 [list]
-[*]The vanilla storage UI over every connected unit at once, 45 cells a page. Withdraw and deposit exactly like a chest.
-[*]A [b]Remote Access Panel[/b] you carry in your pocket: 5 Ruby, 5 Sapphire, 5 Copper Ingot, 5 Iron Ingot and one Access Panel, at Woodcrafting level 3. It is crafted under "Digital Storage" only, not under "Chests & Storage", because it isn't a chest and can't be placed. Hold it and interact with a Storage Heart to link the two, then press [b]F6[/b] anywhere to browse that network, from the bottom of the mines if you like. Take it back out of the view to unlink; putting it back in won't re-link it, you have to hand it to the Heart again. Unlinking only works at an Access Panel: in the remote's own view that one cell is visible but locked, so a misclick in the mines can't cut you off from your own storage.
-[*][b]Change the key in game, no restart.[/b] Holding your remote key for half a second always opens the network picker, whatever you have bound it to and however many networks you own. Click [b]Rebind key[/b] in its footer, then press the key you want. It takes effect immediately and is remembered. Keys the game already uses are refused with a reason on the hint line, and it follows your own control rebinds rather than the defaults. Letters are allowed but warned about, because they will also type into the search box while a network view is open. It has to be one keyboard key on its own: no Ctrl or Shift combinations and no gamepad buttons. That is a limit of the installer this mod is built on, not a choice, and it may lift when MOMI updates. You can still set [font=Courier New]remote_hotkey[/font] in [font=Courier New]%LOCALAPPDATA%\FieldsOfMistria\mod_data\yads\yads.json[/font] by hand if you prefer; a name typed there is read once when the game starts.
-[*][b]Holding F6 always gets you back.[/b] Whatever you rebind to, holding [b]F6[/b] for half a second opens the picker, so a key you can't press any more is never a dead end. A tap of F6 does nothing once you've rebound: it's a rescue, not a second shortcut.
-[*][b]Several networks on one key.[/b] Link a remote to as many Storage Hearts as you like. [i]Holding[/i] your remote key always brings up the picker: one row per network, with the room it's in, how many Storage Blocks it has and how full it is. Click a row to open it. Tick the box on the right to make that network your default, and from then on a tap goes straight there; tick the same box again to clear it. With no default set, a tap opens your only network, or the picker if you have several. Because a hold has to be able to mean something else, a tap is read when you let the key go rather than the moment you press it, which is not something you will feel. The one case where the key fires on the press itself is several networks and no default, where a tap and a hold both mean "show me the list" anyway. Your default is remembered per install rather than per save, so a heart that doesn't exist in the save you loaded is simply ignored, and the key behaves as if you had never set one. The list shows up to eight networks, the ones in the room you're standing in first.
-[*]A real search box with full text editing, and an auto-focus toggle so it's ready the moment the panel opens.
-[*]One tap on the X empties the search box, and Ctrl with the arrow keys jumps a whole word at a time. Ctrl+Backspace and Ctrl+Delete eat one too.
-[*]14 category filters, plus All and a "Museum needs" lens for what the museum still wants.
-[*]Value badges on every stack (off, per stack, or per item). Big numbers abbreviate to things like 12.3k.
-[*]Five sort modes: Category, Name, Value, Stack value, Count. Your pick sticks, so every panel opens the way you left it.
-[*]Quick-stack your backpack into the network with one button. Remotes are the one thing it skips, so it can never file your remote away in a crate.
-[*]Crafting stations pull from the network automatically. That one is vanilla behavior: the units are real chests, so they just qualify.
-[*]You can squeeze between crates. Collision is a solid core with walkable edges, so a wall of storage is not a fence.
-[*]A unit that still holds items takes five pickaxe swings to break, with a warning on the first. Empty ones break in one, like any chest.
-[*]Blocks with no heart behave as plain chests, so your items are never locked behind a missing crafting recipe.
-[*]If a deposit doesn't fully fit, the rest comes straight back to you with a toast. Nothing is silently eaten.
+[*]Hand the Remote Access Panel to a Storage Heart and they're linked. Press [b]F6[/b] anywhere to browse that network, even from the bottom of the mines.
+[*]Several networks? [b]Hold[/b] the key for a picker: one row per network with room, blocks and fill. Tick the checkbox on a row to make it your default, and a tap goes straight there.
+[*][b]Rebind the key in game[/b]: hold the key, click Rebind key, press the one you want. Works instantly. Holding F6 always opens the picker as a backup, so a bad key can never lock you out.
+[*]To unlink, take the remote back out at an Access Panel. You can't pull it out through a remote view, so you can't strand yourself from the mines.
 [/list]
 
-The mod never holds your items. Everything you store lives in the real chest inventories of the placed units, which the game's own save system writes; the network view is a live mirror of them. If the game crashes with the view open, nothing is lost.
+[size=5][b]The network view[/b][/size]
+
+[list]
+[*]The vanilla storage UI over every connected unit at once. Withdraw and deposit exactly like a chest.
+[*]A real search box: full text editing, an X to clear it, Ctrl+arrows jump whole words. Auto-focus toggle so it's ready when the panel opens.
+[*]14 category filters, plus a "Museum needs" lens for what the museum still wants.
+[*]Value badges per stack or per item. Big numbers abbreviate, like 12.3k.
+[*]Five sort modes. Your pick is remembered.
+[*]Quick-stack your backpack into the network with one button.
+[*]Crafting stations pull from the network automatically. The units are real chests, so it just works.
+[/list]
+
+[size=5][b]Good to know[/b][/size]
+
+[list]
+[*]You can squeeze between crates: solid core, walkable edges.
+[*]A unit that still holds items takes five pickaxe swings to break. Empty ones break in one.
+[*]Blocks with no heart behave as plain chests, so your items are never locked away.
+[*]If a deposit doesn't fit, the rest comes straight back with a toast. Nothing is silently eaten.
+[/list]
+
+The mod never holds your items. Everything lives in the real chest inventories of the placed units, which the game's own save system writes. If the game crashes with the view open, nothing is lost.
 
 [size=5][b]Install[/b][/size]
 
