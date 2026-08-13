@@ -1,7 +1,7 @@
 {
     "name": "YADS - Yet Another Digital Storage Mod",
     "author": "mykay",
-    "version": "Beta 1.1",
+    "version": "Beta 1.2",
     "description": "Link Storage Hearts, Blocks and Access Panels into one searchable, sortable network inventory.",
     "minInstallerVersion": "0.15.1",
     "manifestVersion": 1,

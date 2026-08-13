@@ -1096,7 +1096,66 @@ def icon_panel():
     return cv
 
 
-ICONS = {"heart": icon_heart, "block": icon_block, "panel": icon_panel}
+def icon_remote():
+    """Remote Access Panel: a handheld slate, screen up, broadcasting.
+
+    The one item in the set with NO plinth, because it is the one item that is
+    not a placeable -- it never stands on the ground, so it never gets the
+    crate the other three are built on.  Read as "the panel, in your hand":
+    the same slate ramp (M1..M4) and the same cyan screen (C1..C4) as
+    `icon_panel`, at tablet proportions instead of terminal ones.
+
+    The screen carries the signal motif -- a bright pale core with two arcs
+    opening upward away from it, dimming outward (C4 core, C3 near arc, C2 far
+    arc).  Both arcs are drawn as bracket shapes (a crest row plus two tails
+    directly beneath its ends) rather than as diagonals, so every lit pixel is
+    4-connected to the next; and the screen interior is FILLED with C1 first,
+    so the whole motif sits on opaque ground and the orphan audit has nothing
+    to find no matter how the arcs are re-cut.
+
+    Symmetric about x = 8.5, like every other icon here.
+    """
+    cv = Canvas(ICON_W, ICON_W)
+
+    # ---- the shell: rows 4..16, columns 3..14, corners cut ----------------
+    cv.hline(4, 13, 4, BK)                 # top edge
+    cv.hline(4, 13, 16, BK)                # bottom edge
+    for y in range(5, 16):                 # side rails
+        cv.set(3, y, BK)
+        cv.set(14, y, BK)
+
+    cv.hline(4, 13, 5, M4)                 # top bevel, lit
+    cv.hline(4, 13, 6, M3)
+    cv.hline(4, 13, 7, BK)                 # screen bezel, top
+    cv.hline(4, 13, 14, BK)                # screen bezel, bottom
+
+    cv.hline(4, 13, 15, M2)                # the grip below the screen
+    cv.set(4, 15, M3)
+    cv.set(13, 15, M1)
+    cv.hline(8, 9, 15, M4)                 # its one button
+
+    for y in range(8, 14):                 # screen bezel, sides
+        cv.set(4, y, BK)
+        cv.set(13, y, BK)
+
+    # ---- the screen: C1 ground, then the broadcast motif on top ----------
+    # Read bottom-up: a bright 2x2 core at rows 12/13 and two arcs opening away
+    # from it, the near one at 10/11 and the far one at 8/9, each dimmer than
+    # the last.  The core is square rather than a 2x1 dash so that it anchors
+    # the motif as a SOURCE instead of reading as a third, shortest arc.
+    cv.rect(5, 8, 12, 13, C1)
+    cv.hline(6, 11, 8, C2)                 # far arc: crest...
+    cv.set(5, 9, C2)                       # ...and its two tails
+    cv.set(12, 9, C2)
+    cv.hline(7, 10, 10, C3)                # near arc: crest...
+    cv.set(6, 11, C3)                      # ...and its two tails
+    cv.set(11, 11, C3)
+    cv.rect(8, 12, 9, 13, C4)              # the source, brightest
+    return cv
+
+
+ICONS = {"heart": icon_heart, "block": icon_block, "panel": icon_panel,
+         "remote": icon_remote}
 
 
 def outline_canvas(icon):
@@ -1958,6 +2017,30 @@ def main():
                         "green=empty | yellow=in use | red=full | cyan=heart+"
                         "panel | white=untinted/highlight-clobber"
                         % (unit, TINT_FRAME), tcomps))
+
+    # ---- the Remote Access Panel's item icon (Beta 1.2) --------------------
+    # Outside the unit loop because it is not a unit: the remote has no object
+    # prototype, so no world strip, no glow, no offline face and no shape box
+    # around a placed body.  What it does have is exactly what any item needs --
+    # an 18x18 icon, its pure-white outline sibling, and the two Shape polys
+    # save_icon writes for them.
+    #
+    # `outlines.json` is NOT written from here.  make_art.py has never touched
+    # that file and must not start: it is hand-maintained, and a generator that
+    # rewrote it would silently drop any entry a future hand edit added.  A
+    # missing entry there costs the icon its outline (spr_nothing substitute
+    # plus an error line), so the entry is added in the same change as the art
+    # and the ship gate greps for it.
+    rem = icon_remote()
+    rem_ol = outline_canvas(rem)
+    r1 = save_icon(ICON_DIR, "spr_ui_item_netstor_remote", rem)
+    r2 = save_icon(ICON_DIR, "spr_ui_item_netstor_remote_outline", rem_ol)
+    produced.append((r1, 18, 18))
+    produced.append((r2, 18, 18))
+    problems += audit("spr_ui_item_netstor_remote", rem.im)
+    problems += audit("spr_ui_item_netstor_remote_outline", rem_ol.im)
+    preview.append(("netstor_remote  (item icon only -- not a placeable)   "
+                    "icon | outline", [rem.im, rem_ol.im]))
 
     # ---- the crafting sub-category icon (v1.5) -----------------------------
     # Outside the unit loop on purpose: it belongs to a MENU, not to a placeable,

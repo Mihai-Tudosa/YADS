@@ -25,7 +25,39 @@
 //
 // 1. OPEN
 //
-function yads_open_view(_node, _scan) {
+// _remote is true for every hotkey open and false for every Access Panel open.
+//
+// ONE FLAG, ONE RULE, AND IT IS NOT "IS THE HEART IN THIS ROOM". A same-room
+// hotkey open has no interact context either - nobody pressed a button on a
+// crate, nobody is standing in front of one - so making the flag depend on
+// distance would buy one lid animation and cost a second code path that only
+// misbehaves in the rare case. Everything the flag turns off is either
+// cosmetic (the chest lid) or an optimisation (a glow invalidation), so
+// "hotkey ⇒ remote" is the whole rule.
+//
+// WHAT IT TURNS OFF, and nothing else:
+//
+//   THE LID. yads_open_chest/yads_close_chest write sprite_index and
+//   image_speed onto node.renderer. A node in another location HAS no live
+//   renderer - Grid.gml:208-212 builds them for the current location only -
+//   but node.renderer is never cleared when the instances die, so the field
+//   holds a stale instance id from the last time that room was loaded. Instance
+//   ids are recycled, so instance_is_alive can answer TRUE about an id that now
+//   belongs to something else entirely, and the write lands on a stranger. That
+//   is the whole hazard: not a missing animation, a write into another object.
+//
+//   THE TEARDOWN GLOW INVALIDATION. Section 9's rescan is already filtered to
+//   the current location, so a remote session cannot have staled anything it
+//   would rebuild - and the reconciler still invalidates on its own whenever
+//   items actually moved, which covers the fill tier of a block in this room if
+//   the network happens to be here. Skipping it is not a correctness change,
+//   it is declining to schedule a ~15k-op rescan that has nothing to look at.
+//
+// Everything else runs completely unchanged, and that is a property of the
+// design rather than a coincidence: the scan, the index, the projection and the
+// reconciler read node.inventory and parent_grid and never once ask what
+// location they are in.
+function yads_open_view(_node, _scan, _remote = false) {
     var _rt = yads_runtime();
 
     // THE FILE READ GOES FIRST, before a menu exists and before anything is
@@ -43,6 +75,7 @@ function yads_open_view(_node, _scan) {
 
     var _view = {
         node: _node,                 // the panel we were opened from
+        remote: _remote,             // opened by hotkey: no lid, no glow work
         members: _scan.members,      // every chest node in the network
         // Blocks only. Read by has_room, deposit and deposit_fit; the three must
         // always agree about where an item is allowed to land or the trailing
@@ -134,8 +167,10 @@ function yads_open_view(_node, _scan) {
     };
 
     // Play the chest opening exactly like the engine's own chest branch does
-    // (Interact.gml:768-771). We claimed the interaction, so this is ours to do.
-    yads_open_chest(_node);
+    // (Interact.gml:768-771). We claimed the interaction, so this is ours to do
+    // - unless nobody interacted with anything, in which case see the remote
+    // note over this function.
+    if (!_remote) { yads_open_chest(_node); }
 
     var _menu = ANCHOR.spawn_menu(Menu.Storage)
         .set_inventories(_view.inv, ARI.inventory)
@@ -150,11 +185,98 @@ function yads_open_view(_node, _scan) {
     //
     // The stamp stays HERE, at the moment the menu is born: it is how the close
     // path recognises our instance, and a menu that exists must be recognisable
-    // from the first frame it exists. _rt.view is the opposite kind of field -
-    // it is a claim that a COMPLETE view is open - and moves to the end of the
-    // function; see the note there.
+    // from the first frame it exists. The registration below depends on it.
     _menu.netstor_view = _view;
     _view.menu = _menu;
+
+    // REGISTERED HERE, AND THE POSITION IS THE WHOLE OF THE ARGUMENT: the first
+    // statement after the menu exists and the view struct is whole, and BEFORE
+    // any decoration (widgets, badges, the first projection, refresh, focus).
+    //
+    // WHAT REGISTRATION MEANS. _rt.view is what attaches the reconciler. Three
+    // consumers gate on it and all three return early while it is unset:
+    // yads_tick (boot.gml:723-724), yads_menu_closed (boot.gml:2148) and
+    // the game_saving hook (boot.gml:2181). So a LIVE Storage menu with
+    // _rt.view unset is a menu whose left pane holds real, withdrawable member
+    // items and which nothing reconciles: `pair.add(slot.item, n)` credits the
+    // backpack and the member chest is never debited. That is silent
+    // duplication, and it is what registering last used to risk for every line
+    // between the spawn and the end of this function.
+    //
+    // PER-FIELD VALIDITY, the three consumers' FIRST post-registration run,
+    // walked field by field against the struct literal above:
+    //
+    //   tick :569  _view.menu            - set on the line above, so the
+    //                                      defensive teardown branch is skipped.
+    //   tick :576  yads_reconcile reads inv (:84), updates_sum (:119) and
+    //              shadow (:89). updates_sum is undefined until a projection
+    //              closes its books, and the never-projected guard at the head
+    //              of yads_reconcile re-baselines and returns false on exactly
+    //              that state - covering BOTH the ordinary empty mirror and
+    //              the partial mirror a mid-projection throw leaves behind
+    //              (which, diffed against an empty shadow, would have minted
+    //              the whole visible page into the blocks - B12w2 MAJOR-1).
+    //              members (:79), deposit_targets (:83) and torn_down (:95)
+    //              are all valid from the literal regardless.
+    //   tick :582  closing (:94) = false.
+    //   tick :585-646  page_request/page, sort_request/sort_mode,
+    //              filter_request/filter, cat_page_request/cat_page - all from
+    //              the literal (:97-113). Every _request is undefined, so each
+    //              branch is skipped and neither yads_apply_sort_label nor
+    //              yads_refresh_filter_bar is reached; both are widget-guarded
+    //              in any case (:3092-3097, :1781-1783).
+    //   tick :652  search_node (:124) = undefined - branch guarded, skipped.
+    //   tick :662  project_dirty (:93) = true, so yads_project DOES run on that
+    //              first tick. It reads index_dirty (:92) -> index_build over
+    //              members, rows (:87), query (:114), filter (:106), sort_mode
+    //              (:104), pages/page (:97-98), inv (:84), menu (:85, set), has_room
+    //              (:90), value_badges (:154 = [], so yads_badge_slot returns at
+    //              its length test, :1648) and page_text (:121 = undefined,
+    //              guarded at network.gml:642). The squares read off the menu is
+    //              itself [$ ]-guarded (network.gml:604-606).
+    //   menu_closed  _ctx.menu, then _menu[$ "netstor_view"] == _rt.view. The
+    //              stamp is written one line above this one, so the identity
+    //              test holds from the first frame the menu exists. teardown
+    //              then reads torn_down (:95), closing (:94), editing (:143 =
+    //              false, so the blur is skipped), reconcile (above),
+    //              flush_hand (menu -> left_menu, [$ ]-guarded at
+    //              network.gml:1287-1291), remote (:78), node (:77), and nulls a
+    //              list every name of which exists in the literal.
+    //   game_saving  view, reconcile, flush_hand, closing, then project or
+    //              view_totals - all covered above.
+    //
+    // Every field the three consumers touch is initialised in the struct literal
+    // at :76-167. The single exception is `menu`, and this line sits behind it.
+    //
+    // THROW BEFORE THIS LINE: menu absent, view absent. yads_config, the literal,
+    // yads_open_chest and the spawn chain are all above. The interact path's
+    // throw is swallowed by mmapi_run_override and the engine's own interact()
+    // opens its vanilla chest UI on the panel; the remote path's is swallowed by
+    // mmapi's per-installer catch (mmapi.gml:75-84) and nothing appears. Neither
+    // leaves a mirror, so there is nothing to duplicate. Unchanged from 1.1.
+    //
+    // THROW AFTER THIS LINE: menu present, view present, reconciler attached.
+    // Every withdrawal from that menu is debited from the member chests on the
+    // very next tick. The duplication window is closed by the PAIR of this
+    // registration and yads_reconcile's never-projected guard: registration
+    // alone would let a mid-projection throw hand the reconciler a partial
+    // mirror over an empty shadow, which reads as a page of fresh deposits.
+    // The menu is an ordinary Menu.Storage, so Escape closes it, ui.menu_closed
+    // fires carrying our stamp, and yads_teardown releases _rt.view early (after
+    // its undefined guard and torn_down latch, :3210-3212, :3231-3232).
+    // The lock-out the old ordering feared - a registered view nobody can clear,
+    // with object_interact swallowing every press until a reload - CANNOT happen
+    // from here, and for the reason that decides the whole placement: a menu
+    // exists to be closed. A half-decorated menu is cosmetically wrong and
+    // custody-correct; registering last had it exactly backwards.
+    //
+    // NEVER ABOVE THE TWO LINES ABOVE. With _view.menu still undefined the next
+    // tick takes the defensive branch at boot.gml:726-730 and tears the view down
+    // under a menu the spawn was still building; and a throw inside the spawn
+    // chain would leave teardown reading a `menu` field that never existed. Both
+    // are avoided by taking the stamp and the assignment first - two plain writes
+    // to an already-allocated struct, neither of which can throw.
+    _rt.view = _view;
 
     // Replace on_close the sanctioned way (Factories.gml:129-131). The vanilla
     // body is a no-op with node == undefined anyway, and we need the chest to
@@ -193,7 +315,18 @@ function yads_open_view(_node, _scan) {
     // then finds nothing to do. It must run AFTER the projection, which is what
     // puts the rows in the mirror it reads.
     var _left_menu = _menu[$ "left_menu"];
-    if (_left_menu != undefined) { _left_menu.refresh(); }
+    if (_left_menu != undefined) {
+        // AND THE ONE THING A REMOTE VIEW WILL NOT LET YOU TAKE, installed
+        // before that refresh so it is true on frame one rather than on the
+        // first repaint. In a remote view the bound remote's own cell is
+        // visible, tooltipped and completely inert: taking it out would unlink
+        // the network from the surface that unlinking closes, and H2 refuses to
+        // let it back in, so the walk home would be the only repair. The
+        // derivation, both directions and the cell-reuse rule are all in
+        // yads_remote_slot_filter; _remote is the whole of the condition.
+        if (_remote) { _left_menu.filter_callback = yads_remote_slot_filter; }
+        _left_menu.refresh();
+    }
 
     // AE2-style: the box is already listening, so the player types the moment the
     // panel opens. The gate is two tests, each carrying real weight against the
@@ -211,25 +344,36 @@ function yads_open_view(_node, _scan) {
     //     (Init.gml:28-29), so under ON_KBM the Big-Picture arm cannot fire and
     //     a Big Picture session with a real keyboard attached keeps auto-focus.
     //
-    // Safe to do here rather than one frame later through the tick: this runs
-    // inside interact(), i.e. AFTER this frame's ANCHOR.on_begin_step, so the
-    // first frame that runs search_think is the next one - by which time the
-    // click or key that opened the panel is long consumed and cannot be mistaken
-    // for the "clicked outside the box" blur.
+    // SAFE FROM BOTH CALLERS, and since 1.2 they sit on opposite sides of the
+    // ANCHOR pass, so the argument has to cover both rather than name one.
+    //
+    //   PANEL (yads_open_view from object.interact). interact() runs from
+    //     obj_ari's step, i.e. AFTER this frame's ANCHOR.on_begin_step, so the
+    //     first run of search_think is the NEXT frame - by which time the click
+    //     or key that opened the panel is long consumed.
+    //   REMOTE (yads_open_view from yads_remote_view, new in 1.2). Our tick is
+    //     drained at the head of Game.step_begin, BEFORE ANCHOR.on_begin_step
+    //     (Game.gml:570-582), so search_think's first run is later in the SAME
+    //     frame and the hotkey's own press is still live for it. boot.gml §5b
+    //     carries the frame order and its derivation.
+    //
+    // What makes the remote case safe is not the frame, it is the keycode. Every
+    // blur path below is keyed to a code the hotkey is not: vk_escape / vk_enter
+    // (:2491), InputId.MenuBack (:2518, default binding "escape"), the Steam-OSK
+    // arm (:2530 - and the two-test gate on the next line disarms both arms of
+    // the engine condition that could have set spawned_steam_keyboard in the
+    // first place), and a left-click outside the plate (:2549). No vanilla
+    // default binds any F-key - Settings.gml's whole binding table contains no
+    // vk_f* at all - and the engine mentions vk_f6 in exactly three places, none
+    // of them a reader: the KEYBOARD_INPUTS membership list (InputUtils.gml:180)
+    // and the two name<->code translation tables (:590, :705). A function-key
+    // hotkey therefore deposits no edge any blur path can see. A LETTER hotkey
+    // would, which is the second reason - on top of the raw-poll one in §5 - that
+    // this mod binds function keys only.
     if (ON_KBM && !steam_on_deck()
         && _config.auto_search && _view.search_node != undefined) {
         yads_search_focus(_view);
     }
-
-    // REGISTERED LAST, and only now that the view is whole. Everything above
-    // this line can throw - spawn_menu, the widget builders, the first
-    // projection - and mmapi_run_override swallows the exception and lets the
-    // engine's own interact() run (mmapi_hooks.gml:352-375). If _rt.view had
-    // already been written, that half-built view would stay registered for the
-    // session: object_interact swallows every press while it is set, so no unit
-    // would open again until a reload. A view nobody registered is simply
-    // garbage; a half-built one that everything defers to is a lock-out.
-    _rt.view = _view;
 
     return _view;
 }
@@ -3071,7 +3215,10 @@ function yads_view_closing(_menu) {
     // Last write-through while the mirror is still meaningful.
     yads_reconcile(_view);
 
-    yads_close_chest(_view.node);
+    // Read with [$ ] rather than directly: this runs off a menu-owned callback,
+    // so the view it finds could in principle predate the field. Absent reads
+    // as "not remote", which is the pre-1.2 behaviour.
+    if (_view[$ "remote"] != true) { yads_close_chest(_view.node); }
 }
 
 function yads_teardown(_view) {
@@ -3091,7 +3238,7 @@ function yads_teardown(_view) {
     //
     // Safe to release this early, verified rather than assumed: nothing in the
     // rest of this function reads _rt.view. Both callers pass the view as an
-    // argument and the tick holds it in a local (boot.gml:259-266), so
+    // argument and the tick holds it in a local (boot.gml:723), so
     // the identity check below is the only consumer, and re-entry is impossible
     // this frame - teardown runs from step_begin (the tick) or from ANCHOR's
     // menu drain, both of which precede obj_ari's step and therefore any
@@ -3129,7 +3276,8 @@ function yads_teardown(_view) {
     // ours first: genuine belt-and-braces, and neither may be deleted.
     yads_flush_hand(_view);
 
-    if (!_lid_done) { yads_close_chest(_view.node); }
+    var _is_remote = (_view[$ "remote"] == true);
+    if (!_lid_done && !_is_remote) { yads_close_chest(_view.node); }
 
     // Drop EVERY node reference, not most of them. All of these point at nodes
     // true_free_node has already unhooked (Anchor.gml:1677-1727); reading a field
@@ -3182,7 +3330,14 @@ function yads_teardown(_view) {
     // connectivity cache in ways nothing else here would notice. One rescan on
     // the next tick costs a fraction of a millisecond and removes a whole class
     // of "the glow is stale after I closed the menu" reports.
-    yads_glow_invalidate();
+    //
+    // Not on a remote close: the cache only ever holds units in the CURRENT
+    // location (section 9 filters on parent_grid.location_id), the player has
+    // been standing in that location the whole time rather than in front of
+    // anything, and the reconciler already invalidates whenever items really
+    // moved. The 60-frame TTL and the STORAGE_NODES count poll still cover
+    // everything else.
+    if (!_is_remote) { yads_glow_invalidate(); }
 }
 
 //
@@ -3613,4 +3768,1194 @@ function yads_status_bar(_row, _fraction) {
         .set_color(make_color_rgb(64, 200, 214));   // the set's cyan
 
     return _frame;
+}
+
+//
+// 7. THE NETWORK PICKER
+//
+// One row per Storage Heart that holds a Remote Access Panel: tap the row to
+// open that network, tick the box beside it to make that network the one a TAP
+// of the hotkey goes to from now on. Opened by a HOLD of the hotkey, and by a
+// tap when the choice is genuinely open (several bound, no default). Section 5c
+// of boot.gml carries the gesture ladder and the arming predicate; this file is
+// only the surface.
+//
+// IT MOVES NO ITEMS. There is no mirror, no shadow, no reconciler and no hand:
+// the picker reads inventories to print two numbers per row and writes nothing
+// but three keys in the config file. That is why it has no teardown worth the
+// name - ui.menu_closed releases the registration and the canvas took the nodes
+// with it.
+//
+// WHY A Menu.Popup, and it is the same argument the status popup makes: it is
+// the only menu type a mod can spawn outright. A hand-rolled AnchorMenu subtype
+// has to borrow an existing menu's fiddle config (AnchorMenu.gml:63 reads
+// MENUS.get_unwrap(type), and MENUS comes only from
+// fiddle_get_directory("ui/menus")), which then lets ANCHOR.get_menu find two
+// menus of one type and trip its "more than one was open" assert
+// (Anchor.gml:154-174) - and borrowing Menu.Storage would collide with the very
+// view this list exists to open.
+//
+// AND A POPUP CARRIES TAPS, which is the finding that settled the surface. The
+// status popup uses none, so it proved only that a popup can hold text. But
+// PopupMenu.create_button (PopupMenu.gml:58-108) is itself a nine-slice on the
+// backplate with set_sprites_from_key, add_hover_outline, set_tap_callback and
+// add_to_pilot - i.e. the engine's own popup buttons are ordinary ANCHOR
+// clickables parented to the backplate, built by the same calls the network
+// view's sort button and clear-X are built by. There is no second plumbing to
+// discover; the rows below are create_button's shape with our own geometry.
+//
+// Three inherited behaviours we do not have to build:
+//
+//   * ESC AND PAD-BACK CLOSE IT. The canvas think runs run_exit_listening every
+//     frame (PopupMenu.gml:301-305), which closes on InputId.MenuBack or on a
+//     click outside the backplate, and the single Close button gets MenuBack
+//     plus its glyph for free as button #1 (:87-106).
+//   * IT PAUSES LIKE EVERY OTHER MENU. [popup] declares pause = "main"
+//     (ui/menus/misc_menus.toml), applied in AnchorMenu.initialize
+//     (AnchorMenu.gml:111-112), so game_paused() holds while the list is up -
+//     which is also what makes yads_remote_ready refuse a second press.
+//   * THE PILOT IS THE POPUP'S. spawn() takes it (PopupMenu.gml:260-263) and
+//     on_close hands the previous one back (:49-51).
+//
+// TWO HOVER LISTENERS PER ROW, AND THEY DO NOT OVERLAP. See the geometry note
+// over yads_picker_row.
+//
+function yads_open_picker(_scan) {
+    // Layout budget, measured the way the status popup's is. The row pitch is
+    // the row height exactly - these are POSITIONAL containers, which have no
+    // border to share, so the -1 overlap the status popup's nine-slices chain
+    // with would be a real one-pixel bite here. The 2px of air between
+    // consecutive rows comes from the 16px controls sitting Middle-aligned
+    // inside an 18px row instead.
+    //
+    // 250 WIDE, NOT THE STATUS POPUP'S 200, and the number is derived from the
+    // row rather than chosen: the summary is up to "35 blocks, 100%" = 80px in
+    // the standard font (fonts/text_widths.toml), the name is trimmed to 14
+    // characters (~84px, and up to ~105 once a "(2)" disambiguator is on it),
+    // and RightIn/LeftIn insets plus a gap take 12 more. 208 of open button
+    // clears that with ~10px to spare; 158 - what a 200px plate would have
+    // given - does not.
+    //
+    // HEIGHT: ROW_TOP + (n-1)*PITCH + ROW_HEIGHT + hint + Close. At the
+    // YADS_PICKER_ROWS cap of 8 that is 30 + 126 + 18 + 4 + 11 + 8 + 10 = 207
+    // plus COMMON_BUTTON_HEIGHT, which is locale-dependent (anchor_utils.gml:10)
+    // and measures 19 in English, ~20 worst known locale - so 226-227 against
+    // the 240px minspec canvas (Display.gml:4). 13px of margin, not generous;
+    // anything added below the rows must re-run this arithmetic.
+    static PLATE_WIDTH = 250;
+    static HEADER_HEIGHT = 24;
+    static ROW_WIDTH = 230;
+    static ROW_HEIGHT = 18;
+    static ROW_TOP = 30;
+    static OPEN_WIDTH = 208;
+    static BOX_SIZE = 16;
+    static HINT_GAP = 4;
+    static HINT_HEIGHT = 11;
+    static NAME_CHARS = 14;
+
+    var _entries = _scan.entries;
+    var _listed = min(array_length(_entries), YADS_PICKER_ROWS);
+
+    var _picker = {
+        menu: undefined,
+        // EVERY entry, not just the listed ones: default_index can point past
+        // the cap because entries are ordered current-location-first, so a
+        // default bound in another room can be pushed past row 8 by however
+        // many local networks sort ahead of it (not by "fewer networks were
+        // bound before" - the index is recomputed per scan). The tap ladder in
+        // boot.gml is right to keep honouring it. KNOWN EDGE (B12p A-m2): in
+        // that state the hint says a default exists but no listed checkbox is
+        // lit, and unticking it needs the default's own row - reachable only
+        // past 8 bound networks; accepted. Only `choice` is constrained to
+        // the rows that exist, because only a row can produce one.
+        entries: _entries,
+        default_index: _scan.default_index,
+        choice: undefined,
+        closing: false,
+        hint: undefined,
+        hint_set: "",
+        hint_hold: "",
+        // 7f, the rebind capture. `capture` is undefined except while the
+        // picker is listening for a key; `flash` counts down the frames the
+        // hint holds an answer before returning to its two steady states.
+        hint_capture: "",
+        capture: undefined,
+        flash: 0,
+        flash_text: "",
+    };
+
+    // 7a. Shell. Everything is built BEFORE spawn(): spawn asserts on a second
+    //     call and is what enables the canvas, mutes input and takes the pilot
+    //     (PopupMenu.gml:233-243).
+    var _height = ROW_TOP + max(_listed - 1, 0) * ROW_HEIGHT + ROW_HEIGHT
+        + HINT_GAP + HINT_HEIGHT + 8 + COMMON_BUTTON_HEIGHT + 10;
+
+    var _popup = popup_creator(YADS_LOCAL_ROOT + "picker_title");
+
+    _popup.backplate.set_size(PLATE_WIDTH, _height);
+
+    // add_title sized the header against the default 180px backplate, so this
+    // has to run after the resize (StorageMenu.gml:616-619 does the same).
+    _popup.header
+        .set_xy(0, 0)
+        .set_sprite(spr_ui_tooltip_header_box)
+        .set_size(_popup.backplate.get_width(), HEADER_HEIGHT);
+
+    // 7b. The rows.
+    var _pilot = _popup.pilot;
+    var _previous = undefined;
+    var _seen = {};
+
+    var _summary_pattern = yads_pattern(
+        YADS_LOCAL_ROOT + "picker_summary", "{} blocks, {}%");
+    var _network_pattern = yads_pattern(
+        YADS_LOCAL_ROOT + "picker_network", "Network {}");
+    var _dup_pattern = yads_pattern(
+        YADS_LOCAL_ROOT + "picker_dup", "{} ({})");
+
+    for (var _i = 0; _i < _listed; _i++) {
+        var _entry = _entries[_i];
+        var _node = _entry.node;
+
+        // The two numbers that tell one network from another. A full flood-fill
+        // per row is fine here and nowhere else: it happens once, on a frame
+        // the player asked for a list, on a paused game - the same cost the
+        // heart's own status popup pays on every interact.
+        // COUNT PARITY: this counts deposit_targets unfiltered; the status
+        // popup filters for a live inventory first. Identical today (every
+        // block is a chest and carries one), but these two surfaces print the
+        // same sentence - if either count ever changes, change both.
+        var _net = yads_scan(_node);
+        var _blocks = array_length(_net.deposit_targets);
+
+        var _used = 0;
+        var _size = 0;
+        var _members = _net.members;
+        for (var _m = 0; _m < array_length(_members); _m++) {
+            var _inventory = _members[_m][$ "inventory"];
+            if (_inventory == undefined) { continue; }
+            var _fill = yads_fill_of(_inventory);
+            _used += _fill.used;
+            _size += _fill.size;
+        }
+        var _pct = (_size <= 0) ? 0 : floor(_used / _size * 100);
+
+        // The row's name. Trimmed by CHARACTERS in GML rather than by
+        // set_max_characters on the node, because the disambiguator has to
+        // survive the trim: "Sunnyside Farmstead (2)" truncated by the node
+        // would lose the one part of it that disambiguates anything.
+        var _label = yads_loc_name(_node[$ "parent_grid"]);
+        if (!is_string(_label) || _label == "") {
+            _label = format(_network_pattern, string(_i + 1));
+        } else if (string_length(_label) > NAME_CHARS) {
+            _label = string_copy(_label, 1, NAME_CHARS);
+        }
+
+        // Two hearts in one room are two rows with one name, so the second and
+        // later get a count. Keyed on the trimmed label, which is what the
+        // player actually reads - two different long names that trim to the
+        // same 14 characters are as ambiguous on screen as two identical ones.
+        var _times = _seen[$ _label];
+        _times = (_times == undefined) ? 1 : _times + 1;
+        _seen[$ _label] = _times;
+        if (_times > 1) {
+            _label = format(_dup_pattern, _label, string(_times));
+        }
+
+        _previous = yads_picker_row(_popup, _previous, ROW_TOP,
+            ROW_WIDTH, ROW_HEIGHT);
+
+        var _open = common_slice(_previous, OPEN_WIDTH, BOX_SIZE)
+            .set_align(Align.LeftIn, Align.Middle)
+            .set_x(0)
+            .set_tap_sound("SoundEffects/UI/UIExtraPositiveClick")
+            .set_tap_callback(yads_tap_picker_open, [_picker, _i])
+            .add_to_pilot(_pilot);
+
+        ANCHOR.text(_open)
+            .set_lut(COMMON_LUT)
+            .set_align(Align.LeftIn, Align.Middle)
+            .set_x(4)
+            .set_text(_label);
+
+        ANCHOR.text(_open)
+            .set_lut(COMMON_LUT)
+            .set_align(Align.RightIn, Align.Middle)
+            .set_x(-4)
+            .set_text(format(_summary_pattern, string(_blocks), string(_pct)));
+
+        // THE CHECKBOX. common_slice hands us the whole spr_ui_generic_box
+        // state set including SELECTED, read every frame by the engine's own
+        // sprite state machine (Anchor.gml:600-618) - but in_hover short-
+        // circuits BEFORE is_selected in that ladder, so on a gamepad the
+        // focused row's box shows hover, never selection. The tick glyph is
+        // therefore not decoration: it is the ONLY default indicator a pad
+        // player sees. It is the vanilla settings screen's own pair
+        // (SettingsMenu.gml:66-71 swaps exactly these two sprites from a
+        // think callback).
+        //
+        // add_to_pilot with newline_after, so a pad walks DOWN the networks and
+        // LEFT/RIGHT between "open it" and "make it default" - one pilot row per
+        // network, and the Close button alone on the row after the last.
+        var _box = common_slice(_previous, BOX_SIZE, BOX_SIZE)
+            .set_align(Align.RightIn, Align.Middle)
+            .set_x(-2)
+            .set_tap_sound("SoundEffects/UI/UIExtraPositiveClick")
+            .set_tap_callback(yads_tap_picker_default, [_picker, _i])
+            .set_selected_getter(yads_picker_default_selected, [_picker, _i])
+            .add_to_pilot(_pilot, true);
+
+        var _glyph = ANCHOR.sprite(_box)
+            .set_sprite(spr_ui_generic_checkbox_off)
+            .set_align(Align.Center, Align.Middle);
+
+        // ON THE BOX, NOT ON THE GLYPH: set_think_callback sets run_logic
+        // itself (Node.gml:540-550), so either node could host the think - the
+        // box is chosen because common_slice installs no think of its own, so
+        // this overwrites nothing and logs no Warn (the glyph is plain too,
+        // but the box is the node whose selected-getter already owns this
+        // row's state; one node, one owner). The glyph is passed by reference
+        // rather than looked up through an index, so the poll cannot be
+        // pointed at the wrong row by a later edit to the build order.
+        //
+        // spr_ui_generic_checkbox_{on,off} is a PAIR, not a two-frame sprite,
+        // and it is deliberately NOT driven through set_sprites_from_key: the
+        // key is absent from ui/misc.toml's button_sprite_prefixes and
+        // load_button_sprites resolves _enabled/_main/_pressed/_hovered/
+        // _selected/_locked, none of which is _on or _off
+        // (anchor_utils.gml:2502-2517). Every one of vanilla's eight call sites
+        // swaps the asset on a plain ANCHOR.sprite the way this does.
+        _box.set_think_callback(yads_picker_glyph_think,
+            [_picker, _i, _glyph]);
+    }
+
+    // 7c. The hint line, under the last row.
+    //
+    // TWO STATES ON ONE NODE rather than one state and a visibility flip. The
+    // checkbox column is otherwise uncaptioned - there is no room for a header
+    // over a 16px column - so the line has to say what the box does. BOTH
+    // STATES ALSO NAME THE HOLD, and that is the correction this wave shipped:
+    // the hold is the only route to this surface, and the Rebind button in its
+    // footer is the only way to change the remote key in game, so a player who
+    // never learns the hold is locked out of the mod's settings. State A
+    // teaches it; state B repeats it beside the tap it has just re-pointed. The
+    // node never appears or disappears, so the layout below it cannot move, and
+    // both strings are built ONCE here rather than re-resolved every frame in
+    // the poll.
+    //
+    // THE HOLD CLAIM IS TRUE IN EVERY VISIBLE STATE, which is the property the
+    // picker audit praised in the old wording ("the hint mentions the hold
+    // exactly where the hold is armed") - restated for the predicate that
+    // replaced it, `armed <=> (C == 1 || D)`, where it is no longer a plain
+    // complement:
+    //
+    //   state B (D)          armed; the hold produces this list after 400ms.
+    //   state A, C = 1       armed; same.
+    //   state A, C >= 2      NOT armed - and the hold still produces this list,
+    //                        because the PRESS FRAME does (boot.gml 5c). The
+    //                        line promises the list, not the latency, so it is
+    //                        true here too: sooner, not never.
+    //
+    // A hold taken while the picker is already up does nothing in any of the
+    // three, and that is the tick guard rather than the wording:
+    // yads_remote_ready refuses every press with _rt.picker set
+    // (boot.gml:1608), so no state can re-open what the player is reading.
+    //
+    // THE HOTKEY NAME IS COMPOSED, NOT INTERPOLATED INTO LOC TEXT. That
+    // distinction is the whole reason the remote's TOASTS carry no numbers:
+    // create_notification resolves whatever it is handed through local_get
+    // (InfoToastsMenu.gml:31), so a toast can only carry a key. A TEXT NODE is
+    // the other case - the pattern is resolved first and format() fills it, the
+    // way the pager's counter and every status row already do - so the
+    // configured key name goes in safely here and could not have gone into a
+    // toast at all.
+    //
+    // THE NAME COMES FROM THE LIVE BINDING, NEVER FROM THE CONFIG STRING.
+    // yads_config validates remote_hotkey as "a non-empty string" and nothing
+    // more (boot.gml:441-442), and an unresolvable name is deliberately NOT
+    // repaired: yads_install_hotkeys warns, takes vk_f6, and leaves the
+    // player's text in the file (boot.gml:980-989) because it is their text and
+    // may be a name a later mmapi resolves. So the field can say "CTRL+F6"
+    // while the live key is F6 - and reading it here would print
+    // "Tap CTRL+F6 = default" on the ONE surface that exists to repair that
+    // typo, naming a key that does nothing and contradicting the remote_key_bad
+    // toast that has just said "using F6" (boot.gml:1646-1648).
+    // mmapi_hotkey_name_from_vk is the same reverse lookup the commit trusts
+    // (7f), so this line reports what the registry will actually answer to. The
+    // file self-heals on the next successful rebind, which writes the same
+    // function's output (:4857, :4874).
+    //
+    // WIDTH, and the bound is now TRUE rather than assumed, because the source
+    // is a reverse lookup instead of arbitrary player text. name_from_vk can
+    // only return a name whose FORWARD lookup yields this same vk
+    // (payload:88-92), and the forward map resolves exactly our vocabulary:
+    // single digits and letters, F1-F12, INSERT, DELETE, HOME, PAGE_UP,
+    // PAGE_DOWN, SHIFT, CONTROL (payload:11-56). Its other names - NUMPAD_0-9,
+    // ALT, CAPS_LOCK, NUM_LOCK, SCROLL_LOCK, PAUSE_BREAK - all resolve forward
+    // to undefined (payload:44-52) and so can never match a real vk, and the
+    // "vk <ordinal>" fallback needs a non-real vk, which _rt.remote_vk cannot
+    // be (boot.gml:980-996). The longest name in that set is "PAGE_DOWN", so
+    // both lines are measured with it substituted in, against a 250px plate:
+    // "Tick a default, hold PAGE_DOWN = this list" is 224px and
+    // "Tap PAGE_DOWN = default, hold = this list" is 220px (173 and 169 with
+    // "F6"). These keys have no translations, so the English width is the width
+    // in every locale; keep any replacement under 240 with PAGE_DOWN in it.
+    //
+    // ONE LOOKUP FEEDS BOTH, now that state A names the key as well - two calls
+    // could not disagree today, but the pair is one fact and reads as one.
+    var _key_name = mmapi_hotkey_name_from_vk(yads_runtime().remote_vk);
+
+    _picker.hint_set = format(
+        yads_pattern(YADS_LOCAL_ROOT + "picker_default",
+            "Tick a default, hold {} = this list"),
+        _key_name);
+    _picker.hint_hold = format(
+        yads_pattern(YADS_LOCAL_ROOT + "picker_hold_hint",
+            "Tap {} = default, hold = this list"),
+        _key_name);
+
+    // THIRD STATE, and the only one that is not about the checkbox column: the
+    // line the hint shows while the Rebind button has the picker listening for
+    // a key (7f). Built here with the other two so the capture think never
+    // resolves a pattern on a frame it is polling the keyboard.
+    //
+    // Measured like its siblings: 173px in the standard font against a 250px
+    // plate, no substitution to widen it. "ESC" is spelled rather than glyphed
+    // because the cancel is taken through InputId.MenuBack, which a player may
+    // have rebound - the word names the default and the button below still
+    // carries the real glyph.
+    _picker.hint_capture = yads_pattern(
+        YADS_LOCAL_ROOT + "picker_capture", "Press a key to use - ESC cancels");
+
+    // Plain COMMON_LUT with no index, which is what the engine puts on this
+    // exact backplate (PopupMenu.add_description, :153-160) and what the status
+    // popup's own subtitle uses. CommonLutIndex.Dark is for text sitting on a
+    // BUTTON or inside a cream text field; on the popup plate it would be the
+    // one line in the menu nobody can read.
+    _picker.hint = ANCHOR.text(_popup.backplate)
+        .set_lut(COMMON_LUT)
+        .set_align(Align.Center, Align.TopIn)
+        .set_y(ROW_TOP + max(_listed - 1, 0) * ROW_HEIGHT + ROW_HEIGHT + HINT_GAP)
+        .allow_line_breaks(false)
+        .set_text(_picker.hint_set);
+
+    // The poll that keeps it honest, ON THE BACKPLATE - the one node in this
+    // menu that exists for as long as any row does and is never disabled.
+    // set_think_callback sets run_logic and NOTHING else (Node.gml:540-550), so
+    // this does not turn the backplate into a hover listener that could steal
+    // from the rows sitting on it.
+    _popup.backplate.set_think_callback(yads_picker_think, [_picker]);
+
+    // 7d. Close, stamp, go.
+    //
+    // request_newline first, or create_button's own add_to_pilot lands the
+    // Close button beside the last row's checkbox (PopupMenu.gml:83-85).
+    _pilot.request_newline();
+    _popup.create_button("misc_local/close");
+
+    // THE REBIND BUTTON, AND IT MUST COME SECOND. create_button glyphs and
+    // positions by button INDEX: #1 takes InputId.MenuBack and its glyph
+    // (PopupMenu.gml:87-90, :104-106), #2 takes InputId.Interact, and only at #2
+    // does auto_position pull the first button 40px left and push this one 40px
+    // right (:91-97). Registering Rebind first would move the ESC glyph onto it
+    // and leave Close answering Interact - so Close stays button #1 and this is
+    // strictly an addition to the row below the list.
+    //
+    // ZERO HEIGHT COST. Both buttons are Align.Center/BottomIn at y = -10
+    // (:67-70) - one row, two x-offsets - so the plate-height arithmetic over
+    // 7a is unchanged and the 8-row worst case still clears the 240px minspec.
+    //
+    // WIDTH, MEASURED, because two tap targets on one row is the overlap
+    // question anchor-ui-facts.md exists to ask. create_button sizes to
+    // max(60, string_width(label) + 18) (:64-66). "Rebind key" is 56px in the
+    // standard font -> 74 wide, centred at +40, so it spans +3..+77 inside a
+    // 125px half-plate. Close is 60 wide in English and 62 in Russian, its
+    // widest translation of the seven shipped (rus "Закрыть"), centred at -40 ->
+    // -71..-9. The gap is 12px of dead plate and Close would have to reach 86px
+    // to touch, which is 68px of label against a longest-known 44. They cannot
+    // overlap, so there is no hover to steal and no listen_for_hovers gate to
+    // keep alive. This key is ours and untranslated, so 74 is its width in every
+    // locale; re-run this arithmetic before re-wording it.
+    //
+    // remove_glyph() IS NOT COSMETIC. add_glyph installs a think that calls
+    // ANCHOR.tap_node(self) whenever INPUT.take_press(input_id) succeeds
+    // (Node.gml:1832-1839), so the Interact glyph #2 inherits would make E (or
+    // right-click) press Rebind from anywhere in the picker. Freeing the glyph
+    // node (Node.gml:1847-1853) takes the think with it. Vanilla does exactly
+    // this on its own two-button popups (SettingsMenu.gml:801, :812).
+    //
+    // close_on_button_tap = false, the SEVENTH argument, or create_button's
+    // wrapper closes the popup before our callback runs (:74-79) and the capture
+    // would have no surface left to live on.
+    _popup.create_button(YADS_LOCAL_ROOT + "picker_rebind",
+        yads_tap_picker_rebind, [_picker], undefined, undefined, true, false)
+        .remove_glyph();
+
+    // ui.menu_closed reports kind == Menu.Popup for every vanilla popup too, so
+    // stamp the instance. Dynamic fields on menu structs are normal - the engine
+    // reads `e[$ "is_tooltip"]` off them (Anchor.gml:178). Written BEFORE spawn
+    // so the stamp exists from the first frame the menu is live.
+    _popup.netstor_picker = _picker;
+    _picker.menu = _popup;
+
+    // on_close is PopupMenu's own and does real bookkeeping (the popup stack,
+    // the pilot hand-back), so it is NOT replaced the way the view's is. The
+    // close_callback slot exists for exactly this and is invoked last
+    // (PopupMenu.gml:52-54).
+    _popup.close_callback = method(_popup, function() {
+        yads_picker_closing(self);
+    });
+
+    _popup.spawn();
+
+    // REGISTERED AFTER spawn(), which is the OPPOSITE of yads_open_view's rule,
+    // and the asymmetry is the point. There, early registration is what attaches
+    // the reconciler to a menu that already holds withdrawable mirror items, and
+    // the worst case of registering early - a live menu nobody can clear - is
+    // impossible because a Storage menu can always be closed. Here there is no
+    // custody to attach and the worst case runs the other way: a throw between
+    // popup_creator and spawn() leaves an UNSPAWNED popup on ANCHOR.open_menus
+    // with a disabled canvas, which never runs run_exit_listening and therefore
+    // can never be closed by the player. Registering that as _rt.picker would
+    // make yads_remote_ready refuse every press for the rest of the session.
+    // The orphan itself is the status popup's exposure too, and unchanged by
+    // where this line sits; what this line decides is whether the hotkey dies
+    // with it.
+    yads_runtime().picker = _picker;
+
+    return _picker;
+}
+
+// One row container, chained off its predecessor the way the status popup's
+// rows are - except these are POSITIONAL nodes and chain at set_y(0) rather
+// than -1, because a positional has no border for consecutive rows to share.
+//
+// THE GEOMETRY IS THE HOVER ARGUMENT, so it is written out here rather than
+// left to be re-derived. ANCHOR grants hover to AT MOST ONE node and hover_node
+// releases the previous holder unconditionally, wiping its in_hover, in_tap AND
+// tap_is_deferred (Anchor.gml:1806, :1862-1864) - so two OVERLAPPING hover
+// listeners cannot both work, in either registration order, and the Beta 1.1
+// clear-X bug was exactly that. The clear-X had no way out of the overlap: it
+// has to sit INSIDE the text plate because the plate is the field. A picker row
+// has no such constraint, so it takes the cheaper answer the bottom bar's own
+// layout note already states - "keep the gaps" (section 2a) - and the two
+// controls are non-overlapping siblings:
+//
+//   row (positional, 230 x 18)          local x 0..230, y 0..18
+//     open   LeftIn  x 0,  208 x 16     x   0..208, y 1..17
+//     box    RightIn x -2,  16 x 16     x 212..228, y 1..17
+//
+// RightIn is cache_x = x + parent.cache_x + parent.width - node.width
+// (anchor_utils.gml:232-239) and Align.Middle is floor((18 - 16)/2 + 0.5) = 1
+// (:267-273), so both controls lie wholly inside the row and 4px of dead
+// positional apart. No listen_for_hovers gate, no per-frame poll to keep one
+// alive, and no bbox trim - the trims the clear-X needs exist to pull an 18px
+// sprite back inside a 14px plate, and nothing here overhangs anything.
+//
+// The container itself takes no hovers to steal: it carries no tap callback, and
+// listens_for_hovers is only ever set by set_tap_callback / listen_for_taps
+// (Node.gml:519-520, :486-487). Same for the backplate above it, whose think
+// callback sets run_logic alone (:540-550).
+function yads_picker_row(_popup, _previous, _top, _width, _height) {
+    if (_previous == undefined) {
+        return ANCHOR.positional(_popup.backplate)
+            .set_size(_width, _height)
+            .set_align(Align.Center, Align.TopIn)
+            .set_y(_top);
+    }
+
+    return ANCHOR.positional(_previous)
+        .set_size(_width, _height)
+        .set_align(Align.Center, Align.BottomOut)
+        .set_y(0);
+}
+
+//
+// 7e. THE PICKER'S CALLBACKS
+//
+// Tapping a row RECORDS the choice; boot.gml's tick closes this menu and opens
+// that network one frame later. Tapping a checkbox writes the config file
+// straight through, exactly like the sort cycle and the value toggle - the
+// setting is a FILE, not view state, and it should survive an alt-F4 taken one
+// second later.
+//
+
+function yads_tap_picker_open(_picker, _index) {
+    if (_picker.closing == true) { return; }
+    _picker.choice = _index;
+}
+
+// Ticking the row that is ALREADY the default clears it, the same gesture the
+// filter bar uses for its lit button: every player expects a single-select
+// control to be dismissable by pressing the lit one again, and there is nowhere
+// else in this UI to say "no default, ask me every time".
+//
+// SINGLE DEFAULT BY CONSTRUCTION. There is one triple of keys in the file and
+// one default_index on the picker, so setting row B does not have to clear row
+// A - it overwrites the only slot there is, and every checkbox's selected
+// getter reads that one number.
+function yads_tap_picker_default(_picker, _index) {
+    if (_picker.closing == true) { return; }
+
+    var _entries = _picker[$ "entries"];
+    if (_entries == undefined) { return; }
+    if (_index < 0 || _index >= array_length(_entries)) { return; }
+
+    var _cfg = yads_config();
+
+    if (_picker.default_index == _index) {
+        _picker.default_index = -1;
+        _cfg.remote_default_loc = "";
+        _cfg.remote_default_x = -1;
+        _cfg.remote_default_y = -1;
+    } else {
+        var _entry = _entries[_index];
+
+        // A heart whose grid could not be named, or whose coordinates are not
+        // numbers, is one yads_remote_scan could never match again - the tick
+        // would be written to disk and then silently fail validation on every
+        // press. Refused instead: the box does not light, and the row still
+        // opens its network. Not reachable against this engine (Grid's
+        // constructor takes location_id as a required argument, Grid.gml:14,
+        // :45, and every placed node carries a top_left), and cheap enough that
+        // the invariant is enforced rather than assumed.
+        if (!is_string(_entry.loc) || _entry.loc == "") { return; }
+        if (!is_real(_entry.tx) || !is_real(_entry.ty)) { return; }
+
+        _picker.default_index = _index;
+        _cfg.remote_default_loc = _entry.loc;
+        _cfg.remote_default_x = _entry.tx;
+        _cfg.remote_default_y = _entry.ty;
+    }
+
+    mmapi_config_write(YADS_MOD,
+        YADS_CONFIG_VERSION, _cfg);
+}
+
+// Read every frame by the engine's own sprite state machine (Anchor.gml:600-618)
+// via Node.is_selected, which is what lights the generic box without a think.
+function yads_picker_default_selected(_picker, _index) {
+    return (_picker.default_index == _index);
+}
+
+// The tick glyph, swapped on the frame the state changes. set_sprite is a plain
+// assignment, so this is one compare and at most one write per row per frame.
+function yads_picker_glyph_think(_picker, _index, _glyph) {
+    if (_picker.closing == true) { return; }
+    if (_glyph == undefined) { return; }
+
+    _glyph.set_sprite((_picker.default_index == _index)
+        ? spr_ui_generic_checkbox_on
+        : spr_ui_generic_checkbox_off);
+}
+
+// The hint line's poll, AND the host of the rebind capture (7f). set_text
+// short-circuits on an unchanged string (Node.gml:1046-1048) and every string
+// below was built at open or at commit, so the steady state is still one struct
+// read and one compare.
+//
+// THE CAPTURE RIDES THIS THINK RATHER THAN A NODE OF ITS OWN. It needs a
+// per-frame call inside ANCHOR's pass and nothing else; a new node would be a
+// new entry in the walk, and any node that took taps would be a new hover
+// listener over a plate that already has two per row. The backplate is the one
+// node in this menu that outlives every row and is never disabled, which is why
+// the hint poll was put here in the first place.
+//
+// A LOCKED CANVAS KEEPS THINKING, which is what makes that possible while the
+// capture has the picker locked: the node loop gates on run_logic &&
+// safe_enabled && !marked_for_death and nothing else (Anchor.gml:374), while
+// lock only touches safe_unlocked, which gates the hover/tap arm (:377). This
+// is the same fact yads_picker_closing already relies on.
+function yads_picker_think(_picker) {
+    if (_picker.closing == true) { return; }
+
+    var _hint = _picker[$ "hint"];
+    if (_hint == undefined) { return; }
+
+    // Listening for a key. Everything else about the picker is frozen.
+    var _capture = _picker[$ "capture"];
+    if (_capture != undefined) {
+        yads_picker_capture_think(_picker, _capture, _hint);
+        return;
+    }
+
+    // Holding an answer the player has just been given. Counted down here and
+    // nowhere else, so a picker that closes mid-flash simply stops counting.
+    if (_picker.flash > 0) {
+        _picker.flash -= 1;
+        _hint.set_text(_picker.flash_text);
+        return;
+    }
+
+    _hint.set_text((_picker.default_index >= 0)
+        ? _picker.hint_hold
+        : _picker.hint_set);
+}
+
+//
+// 7f. THE REBIND CAPTURE
+//
+// Tap "Rebind key", press a key, and that key is the remote key from the next
+// frame on - registry, config file and hint together, with no restart and no
+// file to edit. boot.gml section 5d carries the registry half (why the live
+// entry can be re-pointed at all, and the permanent dead flag the capture proof
+// retires); this is the surface and the policy.
+//
+// THE LOCK IS THE LEVER, and it does three jobs with one call. While
+// _picker.capture is set the menu is locked, which:
+//
+//   * takes the rows, the checkboxes and Close out of the node loop's
+//     clickable arm, which is gated on listens_for_hovers && safe_unlocked
+//     (Anchor.gml:377), so a stray click cannot open a network out from under
+//     the capture. It removes the TAP, not every hover: ANCHOR.try_pilot_hover
+//     grants hover on !node.freed alone, with no safe_unlocked test
+//     (Anchor.gml:1911-1923), so a pad hover mark can still land on a locked
+//     node. Nothing comes of it, and what actually protects pad input during
+//     capture is three other facts - the pilot cannot MOVE, because
+//     position_is_valid returns node.safe_unlocked (Pilot.gml:298-307) and an
+//     all-locked map makes find_first_acceptable_node return Freeze
+//     (:318-320, :440-442); every mouse tap route runs through the gate above;
+//     and the only pad CONFIRM route left on this plate is Close's glyph think,
+//     itself gated on is_unlocked() (Node.gml:1833-1839), Rebind's glyph having
+//     been removed at build time;
+//   * stops the popup closing on ESC or on a click outside the plate -
+//     run_exit_listening reads canvas.is_unlocked() and bails on false
+//     (AnchorMenu.gml:170-183), which is what leaves InputId.MenuBack unclaimed
+//     for us to read as "cancel";
+//   * leaves every THINK running, because thinks are gated on run_logic &&
+//     safe_enabled and lock touches neither (Anchor.gml:374).
+//
+// WHY LOCK AND NOT manual_exit_listening = false. Clearing that flag is how
+// vanilla's own rebind popup refuses ESC (SettingsMenu.gml:797), but it is the
+// wrong tool here: it silences the exit listener and NOTHING else, so the rows
+// underneath would still be live and a click on one would open a network while
+// the capture was still waiting for a key. Vanilla does not have that problem
+// because its capture is a fresh popup with nothing else on it - and it still
+// locks the surface behind it (option_scroller.lock(), :795). One lock closes
+// both halves for us; the ESC behaviour is a consequence of it rather than a
+// second mechanism to keep in step.
+//
+// UNLOCK RESTORES EXACTLY WHAT WAS THERE. set_unlocked propagates to children
+// with personal = false, which leaves each child's own `unlocked` untouched and
+// recomputes safe_unlocked from it (Node.gml:578-590) - so no node in this menu
+// can come back unlocked that was not unlocked before.
+//
+
+// Enter capture. Called from the footer button's tap, i.e. from inside ANCHOR's
+// node walk, which is precisely why the first frame is skipped below.
+function yads_tap_picker_rebind(_picker) {
+    if (_picker.closing == true) { return; }
+    if (_picker[$ "capture"] != undefined) { return; }
+
+    var _menu = _picker[$ "menu"];
+    if (_menu == undefined) { return; }
+
+    // Resolved ONCE, here, so the per-frame poll is a plain loop over codes the
+    // engine has already accepted - see yads_rebind_vocab.
+    _picker.capture = { armed: false, vocab: yads_rebind_vocab() };
+    _picker.flash = 0;
+    _menu.lock();
+}
+
+// Leave capture, whatever the reason. The single unlock site.
+function yads_picker_capture_end(_picker) {
+    _picker.capture = undefined;
+
+    var _menu = _picker[$ "menu"];
+    if (_menu == undefined) { return; }
+    _menu.unlock();
+}
+
+// The mmapi keyboard vocabulary, resolved and probed once at capture entry.
+//
+// THESE 55 NAMES ARE THE WHOLE SPACE, and the reason is round-tripping rather
+// than taste. The captured key has to be written to the config file as a NAME,
+// and the only names that will parse back are the ones
+// mmapi_hotkey_vk_from_name accepts (mmapi_hotkeys.gml payload:11-56): A-Z,
+// 0-9, F1-F12 and seven named specials. The engine's own KEYBOARD_INPUTS array
+// is far wider (InputUtils.gml:123-200 has space, tab, enter, the bracket and punctuation
+// keys, the arrows) and every one of those extra keys would capture fine and
+// then fail to survive a restart - a rebind that silently undoes itself is
+// worse than one that never offered the key.
+//
+// PROBED WITH keyboard_check INSIDE try, WHICH IS MMAPI'S OWN IDIOM
+// (mmapi_hotkeys.gml payload:169-175): the engine throws on a KeyCode it has
+// no entry for, and a name the resolver maps to such a code would otherwise
+// throw once per frame from inside the capture poll. Dropping the throwers here is what
+// lets the poll below run without a try/catch of its own - the same trade
+// yads_remote_hold_poll makes, one step earlier.
+//
+// The probe is also the FIRST HALF of the proof that lets a captured vk be
+// written into a live mmapi entry (boot.gml 5d(3)); the second half is the
+// keyboard_check_pressed that actually selects it.
+function yads_rebind_vocab() {
+    static NAMES = [
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+        "F1", "F2", "F3", "F4", "F5", "F6",
+        "F7", "F8", "F9", "F10", "F11", "F12",
+        "INSERT", "DELETE", "HOME", "PAGE_UP", "PAGE_DOWN", "SHIFT", "CONTROL",
+    ];
+
+    var _out = [];
+    for (var _i = 0; _i < array_length(NAMES); _i++) {
+        var _name = NAMES[_i];
+
+        // Guarded for the same reason mmapi guards its own reverse lookup
+        // (mmapi_hotkeys.gml payload:88-92): the resolver reads bare vk_*
+        // constants, which the live runtime defines and a tier-1 VM does not.
+        var _vk = undefined;
+        try { _vk = mmapi_hotkey_vk_from_name(_name); } catch (__yads_rebind_name) {}
+        if (_vk == undefined) { continue; }
+
+        var _ok = false;
+        try { keyboard_check(_vk); _ok = true; } catch (__yads_rebind_probe) {}
+        if (!_ok) { continue; }
+
+        array_push(_out, { vk: _vk, name: _name });
+    }
+
+    return _out;
+}
+
+// May we take this key, and what do we owe the player if we do?
+//
+// ORDERED SO THAT ONE COMPARE ANSWERS THE FIRST QUESTION: anything below
+// YADS_REBIND_OK is a refusal. The verdict is also the message (see
+// yads_rebind_message), so a deny and its reason cannot drift apart.
+//
+// DENY - RESERVED. Seven names this mod or its tooling already owns:
+//
+//   SHIFT       are the EDITOR'S OWN MODIFIER KEYS, and that is the reason -
+//   CONTROL     not "it would type into the search box". The network view's
+//               search editor reads both raw on every focused frame:
+//               keyboard_check(vk_shift) at view.gml:2594 for selection versus
+//               caret movement, and keyboard_check(vk_control) at :2647 for the
+//               Ctrl+A/C/X/V combos. A modifier bound as the remote key would
+//               fire the gesture in the middle of the player's own shortcut -
+//               the press that starts Ctrl+A raises our flag, and whichever key
+//               they let go of first decides whether the hold arm sees a tap or
+//               a hold. A bare modifier is a poor shortcut on its own terms too:
+//               it is held down for a large part of any typing session.
+//
+//               THE SEARCH-BOX ARGUMENT IS VOID, and it is written down so it
+//               does not come back. While that box has focus the network view is
+//               open, and yads_remote_ready refuses every press in that state
+//               (_rt.view != undefined, boot.gml:1607): yads_remote_press clears
+//               the pending flag and returns with no scan and no toast
+//               (boot.gml:1622, :1627-1630). The search box is protected by the
+//               gate, not by this list.
+//
+//               CONTROL IS ALSO CAUGHT BY THE LIVE TEST BELOW today, because
+//               InputId.Walk defaults to "control" (Settings.gml:127) - but only
+//               today. A player who rebinds or clears Walk in the settings
+//               screen would make it fall through to a SILENT accept:
+//               string_length("CONTROL") is 7, so it misses the letter warning,
+//               and it is not "F12". The static row is what makes the two
+//               modifiers symmetric and unconditional.
+//   PAGE_UP     are ours already: yads_install_hotkeys registers both as the
+//   PAGE_DOWN   view's pager. mmapi permits two registrations on one vk and
+//               fires both (mmapi_hotkeys.gml payload:124-133), so this would not
+//               break - it would just mean one key doing two of our jobs, with
+//               a conflict Warn in every log.
+//   F8 F9 F10   belong to mmapi's debug agent, which claims exactly those three
+//               (mmapi_debug.gml:967-969). Same conflict, someone else's tool.
+//
+// DENY - GAME CONTROL. BINDINGS.inputs_using_keycode(vk) is the LIVE binding
+// table, not a copy of the defaults (Input.gml:523-537 walks BINDINGS.bindings,
+// the same array raw_status resolves through), so this follows a player who has
+// rebound their own controls in the settings screen. It is the check vanilla's
+// own rebind popup runs for the same purpose (SettingsMenu.gml:823-824). Out of
+// our 55 names the stock table claims W A S D (movement), E (Interact), Q
+// (SecondaryInteract and RotateLeft), T (UseToolCharged), G (Throw), M
+// (OpenMapMenu), R (RotateRight), C (CastPinnedSpell) and every digit 0-9 (the
+// toolbar) - Settings.gml:120-164. CONTROL (Walk, :127) is in that table too,
+// but it is denied one clause EARLIER and unconditionally; see the reserved
+// block above for why it may not depend on a setting the player can change.
+//
+// NO BINDING-TYPE FILTER, and that is a derivation rather than an oversight.
+// inputs_using_keycode compares raw keycodes across keyboard, mouse and pad
+// bindings alike, so in principle a pad constant numerically equal to one of
+// ours would produce a false hit. It cannot be one of ours: every code in our
+// vocabulary is a member of KEYBOARD_INPUTS (InputUtils.gml:123-200 lists all
+// 55), and keycode_to_binding_type classifies by that array before it looks at
+// the pad one (:388-400) - so a pad binding carrying one of these numbers would
+// be a code the engine itself calls a keyboard code, which is a contradiction
+// the engine would trip over long before we did.
+//
+// ESC IS NOT ON EITHER LIST because it cannot arrive: vk_escape has no name in
+// mmapi's vocabulary, so it is not in the array the poll scans. It reaches this
+// surface only as InputId.MenuBack, i.e. as cancel.
+//
+// ACCEPT WITH A WARNING - LETTERS. The poll that fires this hotkey has no
+// text-focus test (the whole reason the default is a function key, see the note
+// over YADS_REMOTE_KEY), so a letter also types itself into the network view's
+// search box. That is a legitimate choice - the view is closed when the key is
+// usually pressed, and a player who wants one key should have it - but it has
+// to be said at the moment they pick it, not discovered later.
+//
+// ACCEPT WITH A WARNING - F12. Nothing in the game touches it, but Steam's
+// overlay takes it for screenshots by default, so on most installs it will fire
+// ours AND take a picture.
+//
+// EVERYTHING ELSE IS SILENT, AND THAT IS ELEVEN KEYS WITH NO LETTER AMONG
+// THEM: F1-F7, F11, INSERT, HOME and DELETE. Every single-character name that
+// survives the deny-game clause returns WARN_LETTER, so YADS_REBIND_OK is
+// unreachable for a letter - deliberately, per the paragraph above. An earlier
+// version of this line put "the letters the binding table has not claimed" in
+// the silent set; the code never behaved that way.
+//
+// F2 AND DELETE ARE IN THAT SET, AND NOT BECAUSE NOTHING READS THEM. Both are
+// the vanilla Bugger console toggle - keyboard_check_pressed(vk_f2) ||
+// keyboard_check_pressed(vk_delete), Bugger.gml:122 - but BUGGER.update() is
+// only ever called under `if DEBUG_TOOLS` (Game.gml:578-579, and Setup's copy
+// at Setup.gml:449-450), and BuggerInitialize.gml returns at its second line
+// when DEBUG_TOOLS is false. In a retail build the console never runs and that
+// reader is dead. The verdict is right; the reason is "compiled out", not
+// "unread".
+function yads_rebind_verdict(_vk, _name) {
+    if (_name == "SHIFT" || _name == "CONTROL"
+        || _name == "PAGE_UP" || _name == "PAGE_DOWN"
+        || _name == "F8" || _name == "F9" || _name == "F10") {
+        return YADS_REBIND_DENY_RESERVED;
+    }
+
+    if (BINDINGS.inputs_using_keycode(_vk).count() > 0) {
+        return YADS_REBIND_DENY_GAME;
+    }
+
+    if (_name == "F12") { return YADS_REBIND_WARN_F12; }
+
+    // A single character in this vocabulary is a digit or a letter. Under STOCK
+    // bindings every digit was claimed by the toolbar two clauses ago, so in
+    // practice this arm is the letters - but the deny-game test is LIVE, so a
+    // player who unbinds a toolbar slot drops that digit through to here. The
+    // outcome stays right either way: a digit types into the search box too,
+    // which is exactly what picker_set_letter says.
+    if (string_length(_name) == 1) { return YADS_REBIND_WARN_LETTER; }
+
+    return YADS_REBIND_OK;
+}
+
+// The line the hint shows for a verdict, with the key's name in it.
+//
+// ONE STATEMENT PER KEY so the loc-closure gate can see each literal, and
+// yads_pattern for each so a locale that did not install one still reads
+// English rather than the key path (network.gml:661-665).
+//
+// WIDTHS, measured against fonts/text_widths.toml with the longest name in the
+// vocabulary ("PAGE_DOWN") substituted, against the 250px plate and the 240px
+// budget the hint line has held since Beta 1.2: deny_game 230, deny_reserved
+// 222, set 188, set_letter 230, set_f12 190. Two of those arms cannot actually
+// reach nine characters - the letter warning is only ever one character and the
+// F12 warning only ever three - so the real widths are 174 and 145. They are
+// budgeted at the worst case anyway, because the arm a string belongs to is
+// easier to change than a measurement is to remember.
+function yads_rebind_message(_verdict, _name) {
+    switch (_verdict) {
+        case YADS_REBIND_DENY_GAME:
+            return format(yads_pattern(YADS_LOCAL_ROOT + "picker_deny_game",
+                "{} is a game control - try another"), _name);
+
+        case YADS_REBIND_DENY_RESERVED:
+            return format(yads_pattern(YADS_LOCAL_ROOT + "picker_deny_reserved",
+                "{} is reserved - try another key"), _name);
+
+        case YADS_REBIND_WARN_LETTER:
+            return format(yads_pattern(YADS_LOCAL_ROOT + "picker_set_letter",
+                "{} set - it types in the search box"), _name);
+
+        case YADS_REBIND_WARN_F12:
+            return format(yads_pattern(YADS_LOCAL_ROOT + "picker_set_f12",
+                "{} set - Steam may take it"), _name);
+    }
+
+    return format(yads_pattern(YADS_LOCAL_ROOT + "picker_set",
+        "{} is now your remote key"), _name);
+}
+
+// One frame of listening. Runs from the backplate think, i.e. from inside
+// ANCHOR.on_begin_step, which is the ONLY place the cancel can be read.
+//
+// WHY NOT FROM yads_tick. The tick runs from the head of Game.step_begin,
+// ABOVE INPUT.begin_frame() (Game.gml:570-582) - and begin_frame is what clears
+// input_overrides and recomputes every raw status for the frame (Input.gml:26-33).
+// A take_press up there would be answered from the previous frame's state and
+// then overwritten before anything else could see that we took it. Down here we
+// are after begin_frame and inside the same walk the rest of the menu runs in.
+//
+// AND WHY THE BACKPLATE SEES MenuBack AT ALL, with a popup whose canvas think
+// calls INPUT.override_input on every InputId while it is up
+// (PopupMenu.gml:305-309) and raw_status returning Off for anything overridden
+// (Input.gml:274-277). The walk is REVERSE registration order (Anchor.gml:370)
+// and the canvas is created before the backplate it parents, so the backplate
+// is visited FIRST and the override loop runs after us, every frame. The
+// overrides do not carry over: begin_frame clears the whole array at the top of
+// the next step. Nothing else claims the press either, because everything that
+// would is gated on being unlocked - run_exit_listening (AnchorMenu.gml:172)
+// and Close's own glyph think (Node.gml:1833-1839) both test it.
+//
+// take_press MUTES the press it hands back (Input.gml:270 -> :421-430), and that
+// mute is LOAD-BEARING rather than tidy. Cancelling calls unlock() immediately,
+// and the canvas think runs AFTER us in the same walk - so on that one frame
+// run_exit_listening finds an unlocked canvas and asks for MenuBack itself. It
+// gets nothing, because process_binary skips a Pressed flag that carries Muted
+// (:421-430), so the picker survives the ESC that ended the capture instead of
+// closing on it. (This note used to claim the same mute also covers
+// AnchorMenu.think's own exit listener, run after the whole node walk at
+// Anchor.gml:653-656. For a POPUP that listener never runs: think gates on
+// listen_for_exit_flag (AnchorMenu.gml:162-164), seeded from
+// self.data.listen_for_exit (:89), and [popup] sets listen_for_exit = false
+// in ui/menus/misc_menus.toml:66. A belt that was never buckled.)
+//
+// A FOREIGN MENU ON TOP CANCELS THE CAPTURE, AND THAT IS REACHABLE. An earlier
+// version of this note called a second popup over the picker unreachable, on
+// the grounds that yads_remote_ready refuses our own and the world is paused
+// behind this one's MENU flag. Both halves are about menus WE or the PLAYER
+// open. The engine opens one on its own account: when the last gamepad drops
+// out of gamepads_connected() while active_input_type is Gamepad,
+// INPUT.begin_frame creates and spawns GAMEPAD_LOST_POPUP (Input.gml:133-148)
+// with no pause test, no menu test and no room test. A controller unplugged or
+// a battery dying mid-capture puts one on top of us - and begin_frame runs
+// BEFORE ANCHOR.on_begin_step in the same step (Game.gml:573, :582), so the
+// first frame this think sees is already covered.
+//
+// Covered, the capture is HALF DEAF, which is the actual hazard. The new
+// popup's canvas think overrides every InputId (PopupMenu.gml:305-309) and its
+// nodes registered after ours, so the reverse walk (Anchor.gml:370) runs that
+// override loop ahead of us and our take_press(MenuBack) reads Off
+// (Input.gml:274-278) - ESC cannot cancel. keyboard_check_pressed is raw and is
+// NOT overridden, so the scan below would still COMMIT a rebind through a modal
+// the player is reading; and closing that modal drops our capture's lock
+// without ending the capture anyway (PopupMenu.gml:36-47, :252-258).
+//
+// So we take the exit ESC would have taken, on the cheapest correct test there
+// is. ANCHOR.open_menus is a List pushed in creation order (Anchor.gml:148) and
+// nothing reorders it, so any menu created after our picker sits after it:
+// last() != our menu means somebody is on top. last() is O(1) and answers
+// undefined on an empty list (List.gml:435-441), and comparing menu structs by
+// identity is the engine's own idiom (PopupMenu.gml:41, :255).
+//
+// UNLOCKING UNDER THE FOREIGN MODAL IS SAFE - checked, not assumed, because
+// cancelling means unlock() and a live row list under a live modal is exactly
+// what the old note worried about. Four of the five routes from an unlocked
+// node of ours to an ACTION end in INPUT.take_press/released: the node loop's
+// tap arm calls ANCHOR.take_tap (Anchor.gml:404 -> :1832-1834),
+// check_for_click_close ends in the same call (:1570-1577), Close's glyph
+// think is take_press (Node.gml:1833-1839), and a DEFERRED tap resolves
+// through tap_released -> INPUT.released (Anchor.gml:1827-1829). All four read
+// through raw_status, which returns Off for an overridden InputId (:274-278),
+// and the foreign popup re-asserts that override every frame it is up -
+// through its fade too, because the override block sits OUTSIDE the
+// close_requested test (PopupMenu.gml:301-309). The FIFTH route is the pilot
+// block (Anchor.gml:311-353), which runs BEFORE the node walk and therefore
+// before this frame's override re-assert - it is closed differently: the
+// foreign popup's spawn() TOOK the pilot (PopupMenu.gml:260-263), so pad
+// navigation drives the modal's nodes, and tap_on_hover defaults false
+// (Pilot.gml:10) so a hover alone can never fire. What survives the unlock is
+// a hover outline on a row, which is cosmetic. The unlock therefore does not
+// need deferring until we are top again.
+function yads_picker_capture_think(_picker, _capture, _hint) {
+    // Somebody else's menu is on top: end the capture the way ESC does - unlock
+    // and keep the picker - because up here we can neither be cancelled nor be
+    // allowed to commit. Tested BEFORE the arming skip, so a capture that is
+    // covered on its first frame never arms at all.
+    var _menu = _picker[$ "menu"];
+    var _top = ANCHOR.open_menus.last();
+    // A tooltip popup is cosmetic (mute_input(false), TooltipMenu.gml:30) and
+    // the engine's own popup_is_open predicate excludes it the same way
+    // (Anchor.gml:178, `e[$ "is_tooltip"] != true`). The picker builds no
+    // tooltips today, so this clause is unreachable robustness - without it,
+    // a future hover hint would read as "covered" and kill every capture.
+    if (_menu != undefined && _top != _menu && _top != undefined
+        && _top[$ "is_tooltip"] != true) {
+        yads_picker_capture_end(_picker);
+        return;
+    }
+
+    // THE FIRST FRAME IS SKIPPED, and it is not superstition. This think runs
+    // in the same ANCHOR pass as the tap that opened the capture: the Rebind
+    // button is registered after the backplate, the walk is reverse order, so
+    // its tap callback has already run THIS frame by the time we get here.
+    // Anything down on the frame the player committed the tap - a key held
+    // while they clicked, the keyboard confirm that drove the pilot onto the
+    // button - would be captured as their choice. Vanilla's own rebind popup
+    // skips exactly one frame for exactly this reason, through the blackboard
+    // rather than a struct field (SettingsMenu.gml:820, :898-900).
+    if (_capture.armed != true) {
+        _capture.armed = true;
+        _hint.set_text(_picker.hint_capture);
+        return;
+    }
+
+    if (INPUT.take_press(InputId.MenuBack)) {
+        yads_picker_capture_end(_picker);
+        return;
+    }
+
+    // Throw-free by construction: every code in here survived a keyboard_check
+    // probe at capture entry (yads_rebind_vocab).
+    var _vocab = _capture.vocab;
+    for (var _i = 0; _i < array_length(_vocab); _i++) {
+        var _key = _vocab[_i];
+        if (!keyboard_check_pressed(_key.vk)) { continue; }
+
+        var _verdict = yads_rebind_verdict(_key.vk, _key.name);
+
+        // Refused: say why and keep listening. The player is still in capture,
+        // so the next key they press is still the one being asked for.
+        if (_verdict < YADS_REBIND_OK) {
+            _hint.set_text(yads_rebind_message(_verdict, _key.name));
+            return;
+        }
+
+        yads_picker_rebind_commit(_picker, _key.vk, _verdict, _hint);
+        return;
+    }
+}
+
+// Take the key. Five writes, in an order chosen so that nothing observable is
+// half-applied: the live registration first, then the file, then the rescue,
+// then the two strings the player reads.
+//
+// AND THE FIRST WRITE IS CHECKED, because it is the only one that can be
+// refused. yads_remote_rebind returns false when its heal path's registration
+// was rejected by the engine (boot.gml 5d), which leaves _rt.remote_vk naming a
+// key nothing listens for. Continuing past that would write the config file,
+// arm the rescue, rebuild the hold hint and flash "X is now your remote key"
+// about a dead binding - four lies, one of them persisted to disk. Instead we
+// say so on the hint line and STAY IN CAPTURE, which is the same shape a deny
+// takes: the player is still being asked for a key, so their next press is
+// still the answer, and ESC still cancels. Cancelling outright would be the
+// worse choice - it would drop them back to a picker whose hint still names the
+// old key with no indication anything was attempted.
+//
+// The rescue IS armed on that path, and deliberately: a failed rebind is the
+// state the F6 hold exists for, and yads_ensure_rescue is idempotent.
+//
+// Unreachable given the capture proof (5d(3)) - the vk survived keyboard_check
+// inside try at vocabulary build and keyboard_check_pressed at selection, so
+// register's own probe cannot throw - but every other statement in this
+// function is written defensively against a proof it already has, and this one
+// was not.
+//
+// THE NAME IS mmapi's OWN REVERSE LOOKUP, never the engine's keycode_to_string.
+// mmapi_hotkey_name_from_vk (mmapi_hotkeys.gml payload:63-94) is written as
+// the exact inverse of the resolver we captured through - it reverses digits
+// and letters arithmetically and probes the forward map for the named keys - so the string
+// it returns is guaranteed to parse back to this same vk on the next boot. The
+// engine's own table spells the same keys in lowercase ("f6", InputUtils.gml:590,
+// :705), and vk_from_name's single-character arm tests ord against "A".."Z"
+// only, so "f6" round-trips to nothing at all.
+//
+// THE FILE IS WRITTEN THROUGH THE CHECKBOX'S IDIOM (yads_tap_picker_default,
+// :4210-4211): mutate the memoized struct and hand the whole thing to
+// mmapi_config_write. The setting is a FILE, not view state, and should survive
+// an alt-F4 taken one second later.
+//
+// NO CONFIG-VERSION BUMP AND NO NEW KEY: remote_hotkey has been in the file
+// since Beta 1.2 and this only ever writes a value it already accepted.
+function yads_picker_rebind_commit(_picker, _vk, _verdict, _hint) {
+    var _rt = yads_runtime();
+
+    // Derived ONCE from the vk, and everything below - the file, the hold hint,
+    // the confirmation - is fed from this one string rather than read back out
+    // of the config struct. Same rule as the hold hint built at open (7c): what
+    // the player is shown comes from the live binding, never from the file's
+    // opinion of it. mmapi's reverse lookup, never the engine's, for the
+    // round-trip reason above.
+    var _name = mmapi_hotkey_name_from_vk(_vk);
+
+    // The live half: _rt.remote_vk and our mmapi registry entry, moved
+    // together. boot.gml 5d owns the argument for why this is safe and what the
+    // caller had to prove to get here.
+    if (!yads_remote_rebind(_rt, _vk)) {
+        // Refused by the engine. Nothing else is written; the rescue is armed
+        // because this is precisely the state it exists for, and the capture
+        // stays open so the next key is still the answer.
+        _hint.set_text(format(
+            yads_pattern(YADS_LOCAL_ROOT + "picker_bind_failed",
+                "{} could not be bound - try another"), _name));
+        yads_ensure_rescue(_rt);
+        return;
+    }
+
+    var _cfg = yads_config();
+    _cfg.remote_hotkey = _name;
+    mmapi_config_write(YADS_MOD, YADS_CONFIG_VERSION, _cfg);
+
+    // The remote key is no longer F6, so the rescue has a job. Idempotent, and
+    // it stands itself down if this rebind was BACK to F6.
+    yads_ensure_rescue(_rt);
+
+    // Rebuild BOTH steady-state hints rather than leaving one naming the old
+    // key. State A carries the key name too since the arming fix (7c), and the
+    // picker outlives the rebind - the player is looking at the line that just
+    // changed, on the very surface that changed it.
+    _picker.hint_set = format(
+        yads_pattern(YADS_LOCAL_ROOT + "picker_default",
+            "Tick a default, hold {} = this list"),
+        _name);
+    _picker.hint_hold = format(
+        yads_pattern(YADS_LOCAL_ROOT + "picker_hold_hint",
+            "Tap {} = default, hold = this list"),
+        _name);
+
+    // THE CONFIRMATION GOES ON THE HINT NODE, NOT IN A TOAST, and that is a
+    // platform fact rather than a layout preference: create_notification
+    // resolves whatever it is handed through local_get (InfoToastsMenu.gml:31),
+    // so a toast can only carry a bare key and this sentence has a key NAME in
+    // it. A text node is the other case - the pattern is resolved first and
+    // format() fills it. Same argument as the hold hint above; see 7c.
+    _picker.flash_text = yads_rebind_message(_verdict, _name);
+    _picker.flash = YADS_REBIND_FLASH;
+
+    yads_picker_capture_end(_picker);
+}
+
+// Fires inside AnchorMenu.close(), before the fade and before any node is
+// freed. The picker has nothing to commit, so this only stops the polls: after
+// close() the canvas is locked but a locked node still thinks (the node loop
+// gates on run_logic && safe_enabled alone, Anchor.gml:374), and a think that
+// touched a node on its way to being freed is the one hazard here.
+function yads_picker_closing(_menu) {
+    if (_menu == undefined) { return; }
+
+    var _picker = _menu[$ "netstor_picker"];
+    if (_picker == undefined) { return; }
+
+    _picker.closing = true;
+}
+
+// Close the picker NOW, with no fade, so the network view can be built in the
+// same frame the row was chosen.
+//
+// request_hide(0) BEFORE close(), and both halves are load-bearing:
+//
+//   * request_hide(0) takes the instant branch - alpha 0 and canvas.disable()
+//     (AnchorMenu.gml:279-284). A DISABLED canvas fails the node loop's
+//     safe_enabled test (Anchor.gml:374), so PopupMenu's think stops running
+//     and stops calling INPUT.override_input on every InputId
+//     (PopupMenu.gml:305-309). Without it the closing popup would keep every
+//     input reading DigitalStatus.Off (Input.gml:276) for the ten frames of its
+//     fade ([popup] fade_out_frames = 10, ui/menus/misc_menus.toml), and the
+//     view opening underneath would not answer ESC for a sixth of a second.
+//   * it also disarms the fade itself. close() calls request_hide() again for a
+//     close_transition, and the second call returns at
+//     `hide_requests > 1 && !instant` (AnchorMenu.gml:271-273) without starting
+//     an ease - so in_transition() is false and the awaiting chain sets
+//     free_requested at its first look instead of eleven frames later.
+//
+// The registration is NOT cleared here. ui.menu_closed is the one place that
+// happens, on both the per-frame drain and the anchor-shutdown path, so there
+// is exactly one release site and no ordering to get wrong.
+function yads_picker_close(_picker) {
+    _picker.closing = true;
+
+    var _menu = _picker[$ "menu"];
+    if (_menu == undefined) { return; }
+
+    _menu.request_hide(0);
+    _menu.close();
 }

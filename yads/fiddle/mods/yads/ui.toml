@@ -111,7 +111,7 @@ block_protected   = "This unit contains items - 4 more swings to break it."
 # NEVER write to that file) and are wired straight to those keys with no ui.toml
 # entry needed. filter_farming names a coarser group from an older taxonomy and
 # no longer labels a bucket: nothing in yads_filter_label_key (view.gml) returns
-# it. It is NOT unreferenced, though — do not delete it. view.gml:1093 passes it
+# it. It is NOT unreferenced, though — do not delete it. view.gml:1347 passes it
 # to the hint label's set_key() as that node's construction-time placeholder.
 # The string is never rendered (hint_plate is built .set_enabled(false) and
 # yads_hint_think always set_key()s the real key before enabling it), but
@@ -136,6 +136,43 @@ filter_scrolls    = "Scrolls & Unlocks"
 # marker.
 filter_museum     = "Museum needs"
 
+# --- Remote Access Panel (Beta 1.2) ----------------------------------------
+# The remote's own name and description are NOT here: they live in
+# fiddle/items/furniture/netstor_set.toml, which the game's own
+# `"items/" = ["*/name", "*/description"]` localization entry already covers.
+# These five are the toasts the GML raises around it.
+#
+# EVERY ONE OF THESE IS A LOC KEY, NEVER A FORMATTED STRING. create_notification
+# resolves whatever it is handed through local_get (InfoToastsMenu.gml:31 in
+# create_notification, and again at :121), so a toast can only carry text that
+# already exists as a key. That is why none of them names a number: it would
+# have to be substituted in before the lookup, and a miss returns the key,
+# undefined or "MISSING" depending on the path (mmapi_local.gml:37 guards all
+# three), i.e. there is no safe way to put a digit in a toast. The picker's
+# keys at the bottom of this file are the other case - they are TEXT NODES, and
+# a text node's pattern is resolved first and filled by format() afterwards.
+
+# Handing a remote to a Storage Heart while holding it: the link is made.
+remote_linked     = "Linked to this Storage Heart."
+# The heart's own 54 slots are full, so the remote has nowhere to sit. Nothing
+# moved: the remote is still in the player's hand.
+remote_heart_full = "This Storage Heart is full - clear a slot to link."
+# Hotkey pressed with no remote in any Storage Heart anywhere.
+remote_none       = "No Storage Heart is linked. Hand a Remote Access Panel to one."
+# (remote_multiple was deleted in Beta 1.2's picker pass. It apologised for a
+# guess the mod no longer makes: with several networks bound and no default set,
+# the hotkey now opens the picker instead of the first heart in registry order.
+# The loc closure gate forbids a shipped key nothing resolves.)
+# A remote was dropped into the network view. Refused and handed straight back:
+# a remote parked in a Storage Block is a binding nothing can read.
+remote_no_deposit = "Link a remote by handing it to a Storage Heart."
+# The config file named a key mmapi cannot resolve, so the mod took F6 and the
+# full gesture ladder with it (boot.gml section 5). Raised once per process, on
+# the first press that could act - the log line alone is invisible, and the boot
+# frame is no place to raise a toast. It names no key and carries no
+# placeholder, which is what lets it be a toast at all.
+remote_key_bad    = "Remote key not understood - using F6. Rebind it in the network picker."
+
 # --- Value badge cycle button ----------------------------------------------
 # Bottom-bar toggle in the same family as autosearch_on/off above: the button
 # always shows (and its tooltip always describes) the CURRENT state, cycling
@@ -143,3 +180,101 @@ filter_museum     = "Museum needs"
 value_off         = "Values: off"
 value_stack       = "Values: per stack"
 value_unit        = "Values: per item"
+
+# --- The network picker (Beta 1.2) -----------------------------------------
+# The list a HOLD of the remote hotkey opens, and that a TAP opens when several
+# networks are bound and none of them has been made the default. One row per
+# bound Storage Heart; the row opens that network, the checkbox beside it makes
+# that network the one a tap goes to. See view.gml section 7.
+#
+# THESE ARE TEXT NODES, NOT TOASTS, so unlike the remote_* keys above they may
+# carry placeholders: the pattern is resolved through local_get first and
+# format() fills it, which is the same idiom the pager's counter and every
+# status row use. A toast could not do this - create_notification looks up
+# whatever string it is handed (InfoToastsMenu.gml:31), so a formatted one
+# misses.
+picker_title      = "Storage Networks"
+# Row name when the game has no display name for the location. {} = row number.
+# Reached for the greenhouses, barns, coops and the mini-museum, whose
+# locations.toml tables carry no `name` - the farm and the house have one.
+picker_network    = "Network {}"
+# Two hearts whose rows would read the same. {} = name, {} = 2, 3, ...
+picker_dup        = "{} ({})"
+# The right-hand half of a row. {} = connected Storage Blocks, {} = how full the
+# whole network is. Budget: "35 blocks, 100%" is 80px in the standard font
+# against a 208px row, which leaves ~105px for the name (trimmed to 14
+# characters plus a possible " (2)"). Measure any replacement against
+# assets/fiddle/fonts/text_widths.toml before widening it.
+picker_summary    = "{} blocks, {}%"
+# The hint line under the list, state A: no default set yet. This is the
+# checkbox column's only caption - a 16px column has no room for a header - so
+# it has to say what the box does, not just that it exists. It ALSO names the
+# hold, because the hold is the only route to this list and to the Rebind button
+# in its footer: a player who never learns it cannot reach the mod's settings at
+# all (boot.gml section 5c, view.gml section 7c). {} = the key name of the LIVE
+# binding, exactly as in picker_hold_hint below.
+#
+# "Tick a default, hold PAGE_DOWN = this list" is 224px, 173px with "F6".
+picker_default    = "Tick a default, hold {} = this list"
+# The hint line under the list, state B: a default IS set, so a tap of the
+# hotkey no longer asks. {} = the key name of the LIVE binding, produced by
+# mmapi_hotkey_name_from_vk(_rt.remote_vk) - never the raw remote_hotkey string
+# out of the config file, which may be an unresolvable name the fallback left
+# in place (view.gml section 7c).
+#
+# MEASURED AGAINST THE LONGEST KEY NAME mmapi will resolve, which is
+# "PAGE_DOWN": "Tap PAGE_DOWN = default, hold = this list" is 220px against the
+# 250px plate. With "F6" it is 169px. Keep any replacement under 240px with
+# PAGE_DOWN substituted in; this key has no translations, so the English width
+# is the width in every language. The same budget governs picker_default above,
+# which is why both are re-measured together.
+picker_hold_hint  = "Tap {} = default, hold = this list"
+
+# --- The rebind capture (view.gml section 7f) ------------------------------
+# The footer button that starts the capture, and the five lines the hint shows
+# while and just after it runs. Every one of these is a TEXT NODE like the
+# picker keys above, so the four with {} in them are safe: the pattern is
+# resolved through local_get first and format() fills it afterwards.
+#
+# MEASURED AGAINST THE LONGEST NAME THE VOCABULARY OFFERS, "PAGE_DOWN", against
+# the same 240px budget picker_hold_hint holds on a 250px plate: deny_game 230,
+# deny_reserved 222, set 188, set_letter 230, set_f12 190, bind_failed 236,
+# capture 173. Three of those can never actually reach nine characters -
+# set_letter is only ever fed one letter (174px), set_f12 only ever "F12"
+# (145px), and bind_failed only ever a name that PASSED the verdict, whose
+# longest is "INSERT"/"DELETE" (215px) - but they are budgeted at the worst case
+# anyway. These keys have no translations, so the English width is the width in
+# every locale; measure any replacement against
+# assets/fiddle/fonts/text_widths.toml with PAGE_DOWN substituted in.
+
+# The footer button, beside Close. NOT a text node - this one is read by
+# PopupMenu.create_button, which sizes the button to
+# max(60, string_width(label) + 18). "Rebind key" is 56px -> a 74px button,
+# which clears the Close button beside it by 12px in its widest translation.
+# Re-measure before re-wording: a label past 68px would make the two footer
+# buttons overlap, and two overlapping tap targets is the one thing
+# docs/anchor-ui-facts.md forbids outright.
+picker_rebind     = "Rebind key"
+# Shown for as long as the picker is listening for a key. "ESC" is spelled out
+# rather than glyphed because the cancel is read through InputId.MenuBack, which
+# a player may have rebound - the word names the default, and the Close button
+# below still carries the real glyph for whatever they bound it to.
+picker_capture    = "Press a key to use - ESC cancels"
+# Refused: the key is in the player's LIVE control bindings. {} = the key name.
+picker_deny_game  = "{} is a game control - try another"
+# Refused: the key belongs to this mod's pager, to mmapi's debug agent, or is
+# one of the two modifiers the search editor reads raw (SHIFT, CONTROL).
+# {} = the key name.
+picker_deny_reserved = "{} is reserved - try another key"
+# Taken, with nothing to add. {} = the key name.
+picker_set        = "{} is now your remote key"
+# Taken, but it is a letter - and the hotkey poll has no text-focus test, so it
+# also types into the network view's own search box. {} = the letter.
+picker_set_letter = "{} set - it types in the search box"
+# Taken, but Steam's overlay claims F12 for screenshots on most installs.
+# {} = "F12".
+picker_set_f12    = "{} set - Steam may take it"
+# NOT taken: the key passed every policy test but mmapi's registration was
+# refused by the engine, so nothing is listening for it. The capture stays open
+# after this line, so "try another" is literal. {} = the key name.
+picker_bind_failed = "{} could not be bound - try another"

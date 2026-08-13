@@ -10,6 +10,28 @@ identifiers (`prajaja_digital_storage_*`, `global.__netstor`, the
 `gml/boot.gml` / `gml/network.gml` / `gml/view.gml`. The `netstor_*` CONTENT
 keys did not move and never will.
 
+## Status — Beta 1.1 (historical; three UI additions)
+
+Shipped 2026-08-11. The two standing rules it established (never bump
+`YADS_CONFIG_VERSION` for an added key; a persisted enum's integers ARE the save
+format) were promoted into `CLAUDE.md` § Standing constraints and are still
+binding. The three additions:
+
+- **Clear-X in the search box.** It works because `yads_search_think` closes the
+  plate's `listen_for_hovers` gate while the pointer is over it, NOT because it
+  is registered last (the shipped-dead first cut's belief; the mechanism is now
+  written up in `docs/anchor-ui-facts.md`). Hitbox trimmed via
+  `set_bbox_offset`; the blur test names plate AND button. Full argument at
+  `view.gml`'s clear-button block.
+- **Ctrl+arrow word-jump** and Ctrl+Backspace/Delete word-delete, the latter as
+  "stretch `sel_anchor` to the boundary, then call `yads_edit_delete` unchanged".
+  The `yads_edit_repeat` gate stays OUTSIDE the modifier test: it carries
+  `repeat_key` across frames, so a skipped call loses the release edge.
+- **Sort mode persists** (`config.sort_mode`), seeded into the view struct and
+  written through by `yads_tap_sort` — which writes `sort_request`, not
+  `sort_mode`, because the tick has not applied it yet. The button's build-time
+  label had to move to `yads_sort_key(...)` too, or frame one lies.
+
 ## Status — Beta 1.0 (historical; the first public release)
 
 Shipped 2026-08-10. The standing constraints it established (folder name, frozen

@@ -4,6 +4,24 @@ Split from `CLAUDE.md` (size rule). These are engine facts about the ANCHOR UI
 system, each paid for with a real bug. Read before adding or changing any
 clickable in `view.gml`.
 
+## Nine-slice needs `frame_len = 9`
+
+A sprite is nine-sliceable only if its `.meta.toml` carries `frame_len = 9`;
+`ANCHOR.nine_slice` on a single-frame image draws a negative interior. Plain
+`ANCHOR.sprite` + `set_sprites_from_key` still gets all six button states.
+
+## `set_enabled(false)` does not hide a node from the gamepad
+
+`set_enabled(false)` hides a node from the mouse but NOT from the pad: the
+pilot's `position_is_valid` reads `safe_unlocked` only (`Pilot.gml:296-307`).
+Hide a sometimes-present widget with `set_unlocked` as well or it is a dead stop
+the stick lands on with nothing visible in it.
+
+Mind the asymmetry: `set_unlocked` assigns outright (`Node.gml:578-580`), so a
+per-frame poll overrides an ancestor `canvas.lock()` — gate it on the parent's
+`safe_unlocked`. `enable_node` (`Anchor.gml:1617-1620`) also ignores the parent.
+Rely on neither flag to respect ancestor locks.
+
 ## NEVER OVERLAP TWO HOVER LISTENERS
 
 ANCHOR holds one `current_hovered_node`, and `hover_node` releases the previous

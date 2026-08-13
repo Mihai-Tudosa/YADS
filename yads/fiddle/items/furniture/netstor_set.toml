@@ -1,9 +1,15 @@
 # <---------NETSTOR SET ITEMS------------->
-# YADS — network storage furniture (heart / block / panel).
+# YADS — network storage furniture (heart / block / panel) plus the handheld
+# remote (Beta 1.2).
 #
-# ⚠ THE `netstor_*` KEYS AND `recipe_key`s ARE FROZEN. Item and object keys are
+# ⚠ THE `netstor_*` KEYS AND `recipe_key`s ARE FROZEN — netstor_heart,
+# netstor_block, netstor_panel, netstor_remote. Item and object keys are
 # save-serialized by name; renaming one deletes every placed unit and everything
 # inside it from existing saves (see object_prototypes/furniture.toml).
+# netstor_remote is frozen for a second reason on top of that one: the binding
+# between a player and a Storage Heart IS "a netstor_remote sits in that heart's
+# inventory" (there is no mod save data), so the key is what the binding is
+# made of. Rename it and every linked heart in every save forgets its remote.
 # Field shapes copied verbatim from vanilla `fiddle/items/furniture/basic_chest_set.toml`
 # (R4 Q3 / R3 Q4.3). recipe_key groups color/variant siblings; here each item is its own
 # recipe family, one-to-one with its object prototype in `object_prototypes/furniture.toml`.
@@ -56,3 +62,53 @@
 		{ hours = 0, minutes = 10 },
 	]
 	recipe_key = "netstor_panel"
+
+# The Remote Access Panel — the one item in this set that is NOT a placeable.
+#
+# NO `object` FIELD, ON PURPOSE. `object` is the arm that makes an item
+# placeable (Items.gml:205-213: `prototype.object != undefined` ->
+# `prototype.use = ItemUse.PlaceObject`). With it absent — and with no other
+# arm of that long if/else chain matching either — `prototype.use` stays
+# undefined, so `LiveItem.can_use` returns false on its first line
+# (LiveItem.gml:21-24) and `use_item`'s `impossible("unexpected item_use = {}")`
+# (use_item.gml:294) is unreachable rather than merely unlikely. The remote
+# therefore cannot be dropped into the world as furniture — it lives in a
+# backpack or in the heart it is linked to, which is what the binding needs.
+#
+# NO `restore`, NO `health_modifier`, NO `stamina_modifier`. Items.gml:135-136
+# INFERS `edible` from those two being present, and an edible remote would be
+# eaten (and destroyed) by a mis-click on the hotbar.
+#
+# TAGS: netstor_set puts it in the mod's own "Digital Storage" crafting
+# sub-category (fiddle/ui/crafting/woodcrafting.toml keys on that tag); material
+# is the ordinary vanilla shelf tag for a crafted non-placeable. NOT "furniture"
+# and NOT "chest_and_storage": both would advertise it as a placeable crate in
+# the vanilla Chests & Storage list, which it is not. "material" is also not an
+# infusion-supported tag anywhere in fiddle/infusions.toml, so a remote can
+# never carry an infusion — which is what makes every remote in a save
+# partial_eq to every other one, and therefore makes "does this heart hold a
+# remote" a plain item_id question.
+#
+# VALUE: `store` only, so `bin` derives as store * 0.5 (Items.gml:6-16). 1000
+# sits below the heart's 1250 — the heart stays the set's ceiling on both the
+# store and the bin scale (its bin is 731 against this one's 500) — while
+# staying clearly above the block. Deliberately far under what the recipe costs
+# to assemble (1725 in bin terms): this is a tool you keep, not stock you flip,
+# and letting `bin` track the recipe would have put a 1900g sell price on it.
+[netstor_remote]
+	description = "Links to a Storage Heart. Press F6 to browse that network from anywhere."
+	icon_sprite = "spr_ui_item_netstor_remote"
+	name = "Remote Access Panel"
+	recipe_is_default = true
+	value = { store = 1000 }
+	tags = ["netstor_set", "material"]
+	crafting_level_requirement = 3
+	recipe = [
+		{ count = 5, item = "ore_ruby" },
+		{ count = 5, item = "ore_sapphire" },
+		{ count = 5, item = "copper_ingot" },
+		{ count = 5, item = "iron_ingot" },
+		{ count = 1, item = "netstor_panel" },
+		{ hours = 0, minutes = 45 },
+	]
+	recipe_key = "netstor_remote"

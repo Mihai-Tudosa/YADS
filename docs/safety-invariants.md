@@ -4,6 +4,23 @@ Split from `CLAUDE.md` (size rule). These are current, load-bearing engineering
 facts — not history. Read before touching pick protection, the sprite font or
 the units' `collision_grid`.
 
+## SQUEEZE-BETWEEN COLLISION, AND THE PICK GUARD THAT WAS REVERTED
+
+Both moved here from `CLAUDE.md` (size rule); both are still binding.
+
+- **Squeeze-between collision.** All three placeable prototypes get
+  `collision_grid = ["0110","0110"]`: a solid 16px core with a walkable outer
+  column each side, so two adjacent units still leave the 16px Ari needs (an 8px
+  mask plus 4px of slip each way). It is re-derived on load, so there is no save
+  migration. Never use `"-"` or `-1`: that arm strips pre-existing ROOM collision
+  (`GridUtils.gml:569-579`). This is also what made the load-order near-miss
+  below reachable.
+- **`check_pick` was tried and REVERTED.** Its refusal reached rows north of the
+  unit, it landed after our §10 filter, and it let parked animals blockade
+  removal. **The five-swing §10 filter is the sole removal guard.** The full
+  argument is in `yads/fiddle/object_prototypes/furniture.toml`.
+- Pastel glow palette: measured colour-blind cost, accepted (`docs/history.md`).
+
 ## THE `destructable` CONTRACT
 
 `node.destructable` must never be derived on a timer and must never rest at

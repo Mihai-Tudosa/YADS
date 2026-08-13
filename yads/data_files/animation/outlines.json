@@ -1,5 +1,6 @@
 {
   "spr_ui_item_netstor_heart": "spr_ui_item_netstor_heart_outline",
   "spr_ui_item_netstor_block": "spr_ui_item_netstor_block_outline",
-  "spr_ui_item_netstor_panel": "spr_ui_item_netstor_panel_outline"
+  "spr_ui_item_netstor_panel": "spr_ui_item_netstor_panel_outline",
+  "spr_ui_item_netstor_remote": "spr_ui_item_netstor_remote_outline"
 }

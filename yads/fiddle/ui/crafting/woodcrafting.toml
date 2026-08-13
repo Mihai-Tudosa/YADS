@@ -11,10 +11,17 @@
 # path (MOMIOperations.cs:57-59).
 #
 # Dual membership is vanilla-precedented (every vanilla chest already lists
-# under both its own set AND "Chests & Storage") — our three items
+# under both its own set AND "Chests & Storage") — our three PLACEABLES
 # already carry `tags = ["furniture", "netstor_set", "chest_and_storage"]`
 # (fiddle/items/furniture/netstor_set.toml), so this sub-category lists them
 # a second time without touching that file.
+#
+# The set is FOUR items since Beta 1.2 and the fourth is deliberately not dual:
+# `netstor_remote` carries `tags = ["netstor_set", "material"]`, no
+# `chest_and_storage` and no `furniture`, because it is not a chest and cannot be
+# placed. It therefore appears HERE ONLY. This file still needs no edit for it —
+# the sub-category selects on `tags = ["netstor_set"]`, which the remote carries,
+# so a new set member is picked up automatically.
 #
 # The one blocking risk — MOMI's destination-side TOML parse uses
 # TomlSerializer.Deserialize rather than Utils/Toml.ParseDocument, which could

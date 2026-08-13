@@ -25,12 +25,36 @@ function yads_ids() {
 
     // try_ variants return undefined for an unknown key, which is exactly what
     // we want if only part of the content installed.
+    //
+    // remote_item IS SPELLED DIFFERENTLY BECAUSE IT IS A DIFFERENT KIND OF
+    // NUMBER. The other three are ObjectIds - grid nodes, compared against
+    // node.object_id. The remote is not placeable and has no prototype, so it
+    // only ever exists as an ItemId, compared against live_item.item_id. Both
+    // enums are minted per load and both renumber, so both belong in this memo
+    // and both die on save.game_loaded; the name is what stops a future reader
+    // from testing an ItemId against a node.
     _rt.ids = {
         heart: try_string_to_object_id("netstor_heart"),
         block: try_string_to_object_id("netstor_block"),
         panel: try_string_to_object_id("netstor_panel"),
+        remote_item: try_string_to_item_id("netstor_remote"),
     };
     return _rt.ids;
+}
+
+// Is this live item a Remote Access Panel? One struct read and one compare, and
+// the single place the mod asks that question - the quick-stack skip, the
+// deposit refusal, the binding scan and the link gesture all route through it,
+// so "what counts as a remote" cannot drift between them.
+//
+// undefined _ids.remote_item means the item did not install (a partial content
+// set), and then NOTHING is a remote: every guard fails open to the pre-1.2
+// behaviour rather than matching an undefined against an item_id.
+function yads_is_remote(_item) {
+    if (_item == undefined) { return false; }
+    var _remote = yads_ids().remote_item;
+    if (_remote == undefined) { return false; }
+    return _item.item_id == _remote;
 }
 
 // Is this node one of ours? Used as the flood-fill predicate.
@@ -535,7 +559,7 @@ function yads_project(_view) {
     //     that cell to max_stack + 1 for one frame. The invariant is restored by
     //     TICK ORDERING, not by the write path: reconcile runs before project at
     //     every call site and reconcile always dirties the projection when it
-    //     moved anything (boot.gml:270 then :323-325), so a reconcile ->
+    //     moved anything (boot.gml:576 then :662-663), so a reconcile ->
     //     project pair is guaranteed between any two of InventoryMenu's
     //     input_check frames. The over-stack is diffed out as a real deposit and
     //     the row is re-split here at min(_left, stack) before the engine can read
@@ -593,9 +617,20 @@ function yads_project(_view) {
         if (_cell == undefined) {
             yads_write_slot(_slot, undefined, 0);
             yads_shade_square(_squares, _s, _view.has_room ? 1 : 0.45);
+            // The engine cannot clear this one for us - refresh_slot returns at
+            // count == 0 before it reaches the board - and a stale lock on an
+            // empty cell refuses the deposit the empty cell exists to invite.
+            yads_soft_lock_square(_squares, _s, false);
         } else {
             yads_write_slot(_slot, _cell.item, _cell.count);
             yads_shade_square(_squares, _s, 1);
+            // The one cell a player may read and not touch, and only through the
+            // remote. In a LOCAL view this is skipped and withdrawing the remote
+            // unlinks the network, exactly as it always has. Never written false
+            // here: that is vanilla's clause to write, not ours.
+            if (_view.remote == true && yads_is_remote(_cell.item)) {
+                yads_soft_lock_square(_squares, _s, true);
+            }
         }
 
         // Value badges, written from the same loop and from the same _cell that
@@ -678,6 +713,96 @@ function yads_shade_square(_squares, _index, _alpha) {
     _square.set_alpha(_alpha);
 }
 
+// THE MIRROR'S ONE READ-ONLY CELL: the bound remote, seen through that remote.
+//
+// YOU CANNOT UNPLUG THE ANTENNA THROUGH THE ANTENNA. Withdrawing the remote from
+// a network view is the unlink gesture, and at the Access Panel that is exactly
+// what it should be. Through the REMOTE it is a trap with no way back: the
+// binding is gone, yads_deposit_fit refuses to let a remote back into the
+// network (H2), and the surface the player would repair it from is the surface
+// that just closed. One misclick at the bottom of the mines would cost the walk
+// home. So in a remote view the cell is visible, inspectable, and inert.
+//
+// InventoryMenu has exactly one seam for that, and it is a constructor argument
+// no vanilla call site passes and the mod cannot reach - StorageMenu builds both
+// InventoryMenus itself (StorageMenu.gml:29-30). So we assign the field the
+// constructor would have set (InventoryMenu.gml:2, :502) after build(), which is
+// the same post-build dressing the two banner buttons already get. refresh_slot
+// then calls it for every slot it repaints and ORs the answer into `soft_lock`
+// (:180-182), and that one flag does three things at once:
+//
+//   * the square's think takes the soft_locked branch INSTEAD OF input_check
+//     (:253-260). input_check is the sole entry to PickUp, PutDown and Transfer
+//     and to every gamepad variant of the three (:315-437), so BOTH DIRECTIONS
+//     DIE TOGETHER - which is the requirement, because a PutDown onto an
+//     occupied cell is a SWAP (:406-411) and would have carried the remote out
+//     just as surely as a click on it;
+//   * ANCHOR.take_tap() eats the press and plays UIUnableToInteract (:255-258),
+//     so the refusal has a voice and the press cannot fall through to anything
+//     else. That is the whole of the click feedback and it is free; detecting
+//     the attempt ourselves to raise a toast would need a listener of our own
+//     over the grid, which is the one thing anchor-ui-facts forbids;
+//   * the icon draws at half alpha (:186) - the game's own "you cannot take
+//     this" idiom, already on screen in this very menu whenever the backpack is
+//     full. The square art does not change: spr_ui_inventory_slot ships no
+//     _hovered_untappable frame, so anchor_utils.gml:2517 falls the key back to
+//     the ordinary hovered sprite. Vanilla's own soft-locked storage cells look
+//     the same; nothing here is a new visual language.
+//
+// The pilot is untouched: soft_lock writes a blackboard entry and an alpha and
+// never `unlocked` or `enabled`, and Pilot.position_is_valid reads safe_unlocked
+// alone - so the cell stays navigable-but-inert rather than becoming the dead
+// stop a set_enabled(false) would have made of it (anchor-ui-facts).
+//
+// A PREDICATE ON THE ITEM, NEVER ON THE CELL INDEX, and that is what makes the
+// 45 recycled cells safe: refresh_slot re-derives the flag from whatever the
+// cell holds NOW, so the page flip that puts iron ore where the remote was
+// clears the lock with no bookkeeping of ours. The one hole it leaves - a cell
+// emptied rather than refilled - is closed by yads_soft_lock_square below.
+//
+// Installed on a remote view's left menu ONLY, which is why this reads no view
+// handle and no global: a local view never has one, and its cells behave exactly
+// as they did before. A bare function reference in a struct field, invoked as
+// `self.filter_callback(slot)`, is the same shape mmapi's own hotkey registry
+// runs our callbacks through (mmapi_hotkeys.gml payload:250, `entry.callback()`).
+function yads_remote_slot_filter(_slot) {
+    return !yads_is_remote(_slot.item);
+}
+
+// Assert a square's soft-lock flag from the projection, one walk AHEAD of the
+// engine's own re-derive.
+//
+// WHY THIS EXISTS, given the filter above is the steady-state truth. refresh_slot
+// runs from the InventoryMenu CANVAS's think (InventoryMenu.gml:19-29, :209-211),
+// and the node walk is reverse registration order (Anchor.gml:370) - the canvas
+// is created before its squares (:205, :224-236), so it is visited AFTER all 45
+// of them. Our tick runs above the entire walk. A cell we repaint is therefore
+// read by this frame's square thinks and only re-derived at the end of the same
+// frame, so the remote would be live for exactly one frame every time it landed
+// in a cell that was something else before. Writing the flag WITH the item
+// closes that gap; the engine's re-derive later in the frame agrees with it.
+//
+// ONLY EVER TRUE, EXCEPT ON A CELL WE JUST EMPTIED. refresh_slot ORs a second
+// clause we do not own - "the backpack cannot take this" (:174-177), which is on
+// screen for every mirror cell whenever ARI is full - so writing false onto an
+// OCCUPIED cell would unlock a cell vanilla means to be locked. An emptied cell
+// carries no such clause: refresh_slot RETURNS at count == 0 before it touches
+// the board (:164-168), so nothing but us can write that cell's flag. Clearing
+// it there is mandatory rather than tidy - the flag would otherwise outlive the
+// item it described and leave a phantom cell that refuses deposits into a slot
+// the mirror is advertising as free.
+//
+// Written unguarded by a read-back, unlike yads_shade_square: board_set is one
+// struct assignment through Map.set (Map.gml:25-29) with no invalidation behind
+// it, and board_get answers undefined for a key refresh_slot has never written,
+// which is not a value worth comparing a bool against.
+function yads_soft_lock_square(_squares, _index, _locked) {
+    if (_squares == undefined) { return; }
+    if (_index >= array_length(_squares)) { return; }
+
+    _squares[_index].square.board_set("soft_locked", _locked);
+}
+
 //
 // 8. THE RECONCILER
 //
@@ -756,6 +881,27 @@ function yads_shade_square(_squares, _index, _alpha) {
 // Returns true when anything moved.
 //
 function yads_reconcile(_view) {
+    // Never-projected guard. updates_sum is written in exactly two places: this
+    // function (below) and a COMPLETED projection's books (yads_project 7f).
+    // undefined here therefore means no projection has ever closed its books:
+    // either the mirror is empty (nothing to diff), or a projection threw
+    // mid-write and the mirror holds a partial page whose originals still live
+    // in the members. Diffing that partial page against an empty shadow would
+    // classify every visible stack as a fresh push and mint clones into the
+    // blocks while the originals stay put - automatic duplication, no player
+    // action (B12 wave-2 MAJOR-1). Adopt the mirror as the projection it is
+    // and stand down: every mirror slot was written FROM a member item, so
+    // shadow = view_totals restates the resting invariant (shadow[K] <= members[K]
+    // for every mirrored key - the mirror is one page, so a key straddling a
+    // page boundary mirrors less than the members hold) without moving anything. project_dirty is still
+    // true after a mid-write throw, so the next tick re-projects and the books
+    // close normally.
+    if (_view.updates_sum == undefined) {
+        _view.updates_sum = yads_updates_sum(_view.inv);
+        _view.shadow = yads_view_totals(_view);
+        return false;
+    }
+
     // Fast path: the diff below allocates (one struct per occupied slot plus an
     // 8-part key string), which is real garbage at 60fps on a full page. Every
     // mutation the menu can make bumps some slot's `updates` counter - vanilla's
@@ -910,6 +1056,27 @@ function yads_reconcile(_view) {
         // ONE toast for the whole reconcile, not one per template - the player
         // performed a single action and "the network is full" is a single fact.
         //
+        // WHICH fact, though, is now two possibilities, because yads_deposit_fit
+        // bounces a Remote Access Panel for a reason that has nothing to do with
+        // capacity (H2, see the note over that function). "Network storage is
+        // full" would be an outright lie in front of a half-empty crate, and it
+        // would not tell the player the one thing they need to know, which is
+        // that a remote is linked by HANDING it to a heart.
+        //
+        // ANY remote in the overflow picks the specific message. If a deposit of
+        // several kinds overflowed at once - only possible as the two halves of
+        // a PutDown swap, since the diff loops walk disjoint key sets - the
+        // remote's message wins, because "the network is full" is a fact the
+        // player can see in the grid while "that item is not depositable" is one
+        // they cannot.
+        //
+        // THIS IS THE ONLY EDIT 1.2 MAKES INSIDE THE RECONCILER, and it is
+        // deliberately in the may-fail tail rather than anywhere above the
+        // shadow advance: it reads the local _overflow array and picks a string.
+        // It moves nothing, it writes no field, and it runs after the books are
+        // closed - so the §8 ordering proof is untouched by it, in exactly the
+        // way the give_item loop above it already is.
+        //
         // No toast on the TEARDOWN path: during Anchor.shutdown the InfoToasts
         // menu may already be off open_menus and create_notification derefs it
         // unguarded (InfoToastsMenu.gml:121-123). Gating on torn_down (not
@@ -917,7 +1084,12 @@ function yads_reconcile(_view) {
         // the player's last action can still overflow and InfoToasts is
         // definitely alive.
         if (_view.torn_down != true) {
-            create_notification(YADS_LOCAL_ROOT + "network_full", 60 * 3);
+            var _refused = false;
+            for (var _i = 0; _i < _overflow_count; _i++) {
+                if (yads_is_remote(_overflow[_i].item)) { _refused = true; break; }
+            }
+            create_notification(YADS_LOCAL_ROOT
+                + (_refused ? "remote_no_deposit" : "network_full"), 60 * 3);
         }
     }
 
@@ -976,6 +1148,27 @@ function yads_view_totals(_view) {
 // internally try/caught, but the apply stretch's proof must not have to lean on
 // that - so it happens in the reconciler's refund tail, off this function's
 // consumed return value.
+//
+// WHICH member slot pays is BFS member order then slot order, and for remotes
+// that is a documented residual rather than a guarantee. Every netstor_remote is
+// partial_eq to every other - no infusion can attach (neither `material` nor
+// `netstor_set` is an infusion-supported tag) and clone() preserves every field
+// partial_eq reads (LiveItem.gml:252-262) - so the aggregate merges the whole
+// network's remotes into ONE row, and withdrawing 1 of N off that row takes
+// whichever the walk reaches first. If a spare remote were sitting in a non-heart
+// member, that could unbind the network instead of returning the spare, silently.
+//
+// It is unreachable through this mod: yads_quick_stack skips remotes (:1131) and
+// yads_deposit_fit refuses them (H2 below), so no mod path can put one in a
+// block. The one door left is vanilla's own Throw side-channel, which
+// Furniture.gml:1236-1262 registers on every interaction_chest node
+// unconditionally and which drains the whole held stack (:1245) with no seam
+// covering it - the same residual the README already documents. Items are
+// conserved on every branch and the state is recoverable in both directions
+// (a stray remote is still visible and withdrawable in the aggregate), so this is
+// noted here rather than defended against: a per-slot preference would put an
+// item-kind special case inside the reconciler's apply stretch, which is the one
+// place in this mod that has to stay pure arithmetic.
 function yads_withdraw(_view, _template, _count) {
     var _left = _count;
     var _members = _view.members;
@@ -1065,6 +1258,21 @@ function yads_quick_stack(_view) {
         var _slot = _backpack.slot(_i);
         if (_slot.count == 0 || _slot.item == undefined) { continue; }
 
+        // H1: NEVER QUICK-STACK A REMOTE. The row test below would pass the
+        // moment the network's own bound remote is in the index, and the mover
+        // would then push the player's spare remotes into a STORAGE BLOCK -
+        // where a binding is unreadable, because the binding scan looks in
+        // hearts and only in hearts. One keystroke would quietly convert a
+        // spare remote into landfill and, on a network whose heart already
+        // holds one, would read as "quick-stack ate my remote".
+        //
+        // Belt and braces with the refusal in yads_deposit_fit: that one makes
+        // the fit come back zero so nothing could move anyway, and this one
+        // stops us asking. Neither is redundant - deposit_fit's refusal is what
+        // the RECONCILER path needs, this skip is what makes the intent local
+        // and legible at the one site that walks the player's own backpack.
+        if (yads_is_remote(_slot.item)) { continue; }
+
         // Only stacks of a kind the network already holds, like the vanilla
         // button - quick-stack is "top up", not "dump everything".
         var _key = yads_agg_key(_slot.item);
@@ -1105,6 +1313,70 @@ function yads_quick_stack(_view) {
 // land. It never routes overflow anywhere: the caller keeps custody of the
 // remainder and decides what to do with it.
 function yads_deposit_fit(_view, _template, _count) {
+    // H2: THE REMOTE IS NOT DEPOSITABLE. THE choke point, and it is here rather
+    // than in the reconciler's push classification for the reason the comment
+    // above already gives: this function is the single admission gate for every
+    // deposit path in the mod, so a refusal written here cannot be routed
+    // around by a caller that grows later.
+    //
+    // WHY REFUSE AT ALL. Deposits land in BLOCKS. The binding a remote encodes
+    // is "this remote sits in that HEART's inventory" - the scan in boot.gml
+    // filters on object_id == heart before it ever reads an inventory. A remote
+    // that reached a block would therefore be a live item in a real chest that
+    // no longer means anything: not lost, but silently demoted, with the panel
+    // showing it in the aggregate and the hotkey saying "no heart is linked".
+    //
+    // ZERO IS A COMPLETE ANSWER, and it is the same answer a brim-full network
+    // gives. The caller keeps custody of every unit, exactly as this function's
+    // contract already says, and the reconciler's existing overflow machinery
+    // does the rest - strip from the mirror, amend the books, refund to the
+    // player from the tail. Nothing new is invented and no item is touched.
+    //
+    // THE RESTING INVARIANT, PER OUTCOME (the §8 statement: for every key K in
+    // shadow, shadow[K].count <= the members' total of units partial_eq to it):
+    //
+    //   REFUSE-AND-REFUND. The push arrives because the mirror gained N remotes
+    //   the members never had. We place 0, so the members are byte-identical to
+    //   before. The reconciler pushes {item, N} onto _overflow, mirror_remove
+    //   takes those N back out of the mirror and _now is decremented by exactly
+    //   what was stripped, so `shadow = _now` records only the remotes the
+    //   members really hold (the heart's own bound one, if any - unchanged).
+    //   shadow[K] == members[K]: the invariant holds with equality, which is the
+    //   same place a full-network bounce leaves it. The N units then live only
+    //   in the local _overflow array until give_item hands them back, and that
+    //   call is in the may-fail tail AFTER the books are closed, so a throw
+    //   there costs the player N remotes at worst and can never duplicate them.
+    //
+    //   WITHDRAW (the unbind, still allowed). Untouched by this branch: a
+    //   withdrawal is a PULL, and pulls never reach this function. The mirror
+    //   loses N, yads_withdraw takes N out of the heart's slots, `shadow = _now`
+    //   records the reduced total, and shadow[K] == members[K] again. When N
+    //   empties the heart's last remote the key leaves both sides together, and
+    //   the binding is gone because the binding IS that item's presence -
+    //   which is the entire unbind mechanism, needing no code of its own.
+    //
+    // THE ROUND TRIP IS ONE-WAY, ACCEPTED, AND DOCUMENTED RATHER THAN FIXED.
+    // Pull the bound remote out through the view and push it straight back in and
+    // you do not get the binding back: the pull unbound it (above), and the push
+    // is a deposit, so it lands here and is refused. The units are conserved
+    // exactly - the reconciler strips them from the mirror and give_item returns
+    // them to the BACKPACK - and the remote_no_deposit toast says what happened,
+    // but the affordance still looks reversible for the length of one drag, and
+    // yads_has_room (:360-375) computes its dimming over deposit_targets alone
+    // and knows nothing about this refusal, so the trailing mirror slots are
+    // undimmed and invite the drop.
+    //
+    // Not worth code. Re-binding through the view would mean a deposit path that
+    // targets a HEART, which is exactly the blocks-only rule that makes "where may
+    // an item land" a single body; and dimming a slot per template would make the
+    // dim state depend on what is in the player's hand. The gesture that binds is
+    // handing the remote to the heart (§6b), it is the only one, and the README
+    // says so. This is a display honesty gap, not a custody one.
+    //
+    // Cost: one struct read and one integer compare per deposited template, on
+    // a path that only runs when the diff already found a change.
+    if (yads_is_remote(_template)) { return 0; }
+
     var _left = _count;
     var _targets = _view.deposit_targets;
 

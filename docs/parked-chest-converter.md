@@ -1,10 +1,17 @@
-# Parked for Beta 1.2 — chest-to-Storage-Block converter
+# Parked — chest-to-Storage-Block converter
 
 Owner decision (2026-08-11): the "chest + copper ingot" alternative recipe is
-OUT of Beta 1.1; the converter idea (option B) is liked and parked for 1.2.
-This note carries everything the 1.1 recon and audits proved, so 1.2 starts
-warm. Local only (gitignored is fine either way; nothing here quotes engine
-source at length).
+OUT of Beta 1.1; the converter idea (option B) is liked and parked.
+This note carries everything the 1.1 recon and audits proved, so whichever
+version picks it up starts warm. Local only (gitignored is fine either way;
+nothing here quotes engine source at length).
+
+**Beta 1.2 shipped REMOTE ACCESS instead** (`netstor_remote`, the link gesture
+and the F6 hotkey — see `CLAUDE.md` § Status). The converter was not part of it
+and REMAINS PARKED; it is the leading 1.3 candidate. Nothing below has been
+re-verified against the 1.2 code, so re-check the `boot.gml` interact ladder
+line numbers before working from the "Open design points" list — that ladder
+grew a branch in 1.2 (`yads_link_remote`, at the head of the heart arm).
 
 ## Why it cannot be a crafting recipe (proven, do not retry)
 
@@ -39,7 +46,7 @@ Precedent for programmatic node writes: `Patches.gml` water_blocker entries;
 our own `furniture.place_guard` knowledge. Erase API: `erase_object_node_by_parent`
 (`GridUtils.gml:162`).
 
-Open design points for 1.2:
+Open design points, still open:
 - Confirm popup vs immediate-with-toast (conversion is NOT reversible — picking
   the block later yields a `netstor_block` item, not the chest). Check whether
   popup_creator supports choice buttons; if not, design the arming gesture.
