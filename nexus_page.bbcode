@@ -1,5 +1,5 @@
 [center][size=6][b]YADS - Yet Another Digital Storage Mod[/b][/size]
-[size=3][i]Network storage for Fields of Mistria. One search bar for every crate you own.[/i][/size]
+[size=3][i]Network storage for Fields of Mistria. One search bar for every chest you own.[/i][/size]
 
 [b]Beta 1.3[/b] by mykay · requires the [url=https://www.nexusmods.com/fieldsofmistria/mods/78]Mods of Mistria Installer[/url] 0.15.1+[/center]
 
@@ -9,91 +9,109 @@
 
 If you've played modded Minecraft or Terraria you already know the idea. This is my love letter to Applied Energistics 2, Refined Storage and Magic Storage: link storage units into a network and browse all of it from one terminal. Search, sort, filter, quick-stack.
 
-[size=5][b]The units[/b][/size]
+[size=5][b]How it works[/b][/size]
 
-[list]
-[*][b]Storage Heart[/b] (50 Wood, 5 Copper Ingot, 1 Glass). The brain. One per network.
-[*][b]Storage Block[/b] (30 Wood, 1 Copper Ingot). 30 slots each. Chain as many as you want.
-[*][b]Access Panel[/b] (1 Copper Ingot, 1 Glass). The terminal. Open it to browse the network.
-[*][b]Remote Access Panel[/b] (5 Ruby, 5 Sapphire, 5 Copper Ingot, 5 Iron Ingot, 1 Access Panel). Browse from anywhere.
-[*][b]Network Converter[/b] (1 Copper Ingot, 1 Glass). Turns a placed chest into a crate, or a crate back into a chest.
+Build a [b]Storage Heart[/b], stand Storage Blocks and converted chests next to it, and open an [b]Access Panel[/b] to browse everything they hold in one searchable view. Units link edge to edge, diagonals don't count, and connectors carry the link further than touching allows. Networks don't cross map boundaries: the whole outdoor farm is one area, and the farmhouse, the cellar and every other interior needs a Heart of its own.
+
+Storage Blocks and crates tint green, yellow or red by how full they are, so red means nearly full, not broken. Hearts, panels and connectors glow the set's cyan. A unit that missed the chain shows a sad face instead. Don't place units on tables, they won't connect there.
+
+Once a network has an Access Panel, its blocks and crates stop opening one by one, the Panel is the door. A network with no Heart behaves as plain chests, so your items are never locked away.
+
+[size=5][b]Your first network[/b][/size]
+
+[list=1]
+[*]Craft a Storage Heart and place it.
+[*]Place a Storage Block so it touches the Heart.
+[*]Place an Access Panel touching either one.
+[*]Interact with the Panel, the same button that opens any chest. That's the network view.
+[*]Hold a Network Converter and interact with a placed chest nearby to wire it in too.
 [/list]
 
-The first three are crafted at the Woodcrafting Station, under "Chests & Storage" and their own "Digital Storage" category. The Converter and the Remote craft under "Digital Storage" only: neither is a chest, so neither can be placed.
+Interact with the Heart itself any time for a status report on the whole network.
 
-Place units so they touch and they link up. Connected units glow (blocks and crates tint green, yellow or red by how full they are), a disconnected one shows a sad face. Each room is its own network, so the farm and the farmhouse each need their own Heart. Don't place units on tables.
+[size=5][b]Crafting[/b][/size]
 
-[size=5][b]Turn your chests into network storage[/b][/size]
-
-Every convertible vanilla chest, 59 of them across every family (basic wood in all its colors, deluxe, royal, stone, coral, icebox, fridge, mist, void, obsidian, miners, dragon, the festival flower chest, even the mimic), can join your network as a crate: same exact look, same exact capacity, 30, 42 or 54 slots depending on the chest. A crate glows with the network's colors and shows the sad face when disconnected, just like a Storage Block. The mist chest floats, so its glow shows on the shadow pad beneath it instead of on the chest itself. Crates have no crafting recipe of their own, converting a chest is the only way to get one.
-
-The Network Converter does the converting. Hold it and interact with a placed chest to wire it into the network, contents stay right where they are. Interact with a crate instead and it turns back into the plain chest it was, contents intact again. One converter spent, either direction.
-
-[b]Upgrading is a gesture, not a rebuild.[/b] Hold a chest item and interact with any placed chest or crate: the target becomes that held chest's crate, your items carry over, and the old shell pops straight back into your backpack as an item. It costs the chest you're holding plus one converter, and it's refused with a clear message if your items wouldn't fit the new size. Craft or buy a bigger chest, hold it, tap your crate, that's the whole upgrade. The price is whatever the vanilla chest economy already charges for that tier: a deluxe crate costs you a deluxe chest, same as it always did.
-
-[size=5][b]Wire it all together[/b][/size]
-
-Four floor pieces carry the network between units that are too far apart to touch. Lay them in a path and everything they touch, standing on them or right beside them, joins the same network. They chain to each other too, so a carpet path can run clear across the farm.
+Everything crafts at the Crafting Station under its own [b]Digital Storage[/b] category, from Woodcrafting level 1. The Remote needs level 3. The Heart, the Block and the Panel also show up under Chests & Storage. The Converter and the Remote don't: neither is a chest, so neither can be placed.
 
 [list]
-[*][b]Magic Carpet[/b] (3 Fiber)
-[*][b]Magic Tile[/b] (3 Stone)
-[*][b]Bundle of Cables[/b] (2 Wood, 1 Copper Ore)
-[*][b]Cloud Connector[/b] (1 Glass, 2 Fiber)
+[*][b]Storage Heart[/b] · 50 Wood, 5 Copper Ingot, 1 Glass · the brain, one per network
+[*][b]Storage Block[/b] · 30 Wood, 1 Copper Ingot · 30 slots, chain as many as you want
+[*][b]Access Panel[/b] · 1 Copper Ingot, 1 Glass · the door to the network
+[*][b]Network Converter[/b] · 1 Copper Ingot, 1 Glass · one is spent per conversion
+[*][b]Remote Access Panel[/b] · 5 Ruby, 5 Sapphire, 5 Copper Ingot, 5 Iron Ingot, 1 Access Panel · the network in your pocket
 [/list]
 
-All four are walkable, no hitbox, and you can place a chest or a crate right on top of one. They craft at Woodcrafting level 1, under "Digital Storage" only, and glow cyan once they're carrying a live network.
+And the four connectors, the floor pieces from further down. Four looks, one job, so pick whichever you like or can afford:
 
-They're shape-aware, too. A straight run draws as one continuous line, not a row of repeated tiles: corners bend, junctions branch, and the path runs right up into the crates it feeds. The carpet only shows its fringe on open edges, the cables bundle into a real pipe with clamps, the cloud stretches into one long bank. A freshly placed piece can take a second to settle into its shape while the network catches up.
+[list]
+[*][b]Magic Carpet[/b] · 3 Fiber
+[*][b]Magic Tile[/b] · 3 Stone
+[*][b]Bundle of Cables[/b] · 2 Wood, 1 Copper Ore
+[*][b]Cloud Connector[/b] · 1 Glass, 2 Fiber
+[/list]
 
-One tip: the Cloud Connector floats above the ground and has no line at ground level, so a run that mixes it with the others shows a gap where it sits. The network is still whole there, the cloud just runs its own way.
+[size=5][b]Any chest can join[/b][/size]
+
+Every convertible vanilla chest, 59 of them (basic wood in all its colors, deluxe, royal, stone, coral, the Deluxe and Lovely Cottage iceboxes, mist, void, obsidian, the Mines chest, the dragon chest, the Breath of Spring chest, even the mimic), can become a network crate: the same look and the same capacity (30, 42 or 54 slots by tier), wired in. A crate glows and sulks like a Storage Block. The mist chest floats, so its glow lands on the shadow beneath it.
+
+The [b]Network Converter[/b] does the converting. Hold one and interact with a placed chest and it becomes a crate, contents untouched. Interact with a crate instead and it turns back into the chest it was, contents intact. Either direction eats one converter.
+
+Upgrading is a gesture, not a rebuild. Hold a bigger chest and interact with any placed chest or crate: the target becomes the held chest's crate, everything inside carries over, and the old shell pops back into your backpack. It costs the chest you're holding plus one converter, and it refuses with a clear message if the contents wouldn't fit the new size. Crates have no recipes of their own, converting is the only way to get one.
+
+[size=5][b]Connectors[/b][/size]
+
+Four floor pieces carry the network between units that are too far apart to touch. Lay a path and everything standing on it or right beside it joins the same network. They chain to each other without limit, so one path can run clear across the farm. All four are walkable, have no hitbox, and you can place a chest or a crate right on top of one. They glow cyan once they're carrying a live network, and they draw as a connected run: a straight run is one unbroken line, corners bend, junctions branch, and stacked clouds merge into one bank. A freshly placed piece can take a second to settle into its shape.
+
+The Cloud Connector floats above the ground and has no line at ground level, so a run that mixes it with the others shows a gap where it sits. The network is still whole there, the cloud just runs its own way.
 
 Three small things to know: building over a connector with a blueprint or farm expansion removes it without dropping the item, so re-route before you build. A connector fully covered by a chest can't be picked up until the chest moves. And connectors can't share a cell with a decorative rug, it's one rug layer per cell.
 
+Nothing glowing? Interact with the Storage Heart for a status report, then check in order: give it a second, the glow settles a moment after you place things. Is there a Heart in this room at all? Are the pieces touching edge to edge, not corner to corner? Is anything sitting on a table?
+
 [size=5][b]Remote access[/b][/size]
 
-[list]
-[*]Hand the Remote Access Panel to a Storage Heart and they're linked. Press [b]F6[/b] anywhere to browse that network, even from the bottom of the mines.
-[*]Several networks? [b]Hold[/b] the key for a picker: one row per network with room, blocks and fill. Tick the checkbox on a row to make it your default, and a tap goes straight there.
-[*][b]Rebind the key in game[/b]: hold the key, click Rebind key, press the one you want. Works instantly. Holding F6 always opens the picker as a backup, so a bad key can never lock you out.
-[*]To unlink, take the remote back out at an Access Panel. You can't pull it out through a remote view, so you can't strand yourself from the mines.
-[/list]
+Craft a [b]Remote Access Panel[/b], hold it and interact with a Storage Heart, and the two are linked. Press [b]F6[/b] anywhere to browse that network, even from the bottom of the mines. A tap opens your default network, or your only one. Holding the key for half a second always opens a list of every network you've linked, one row each with its room, its blocks and how full it is. Tick the box on a row to make that network your default.
+
+[b]Rebind the key in game[/b]: hold your remote key, click Rebind key in the list's footer, press the one you want. It takes effect instantly, no restart. It has to be one keyboard key on its own, no Ctrl or Shift combos and no gamepad buttons, a limit of the installer this mod is built on. Keys the game already uses are refused with a reason, and letters are warned about, they also type into the search box. Holding [b]F6[/b] always opens the list whatever you rebound to, so a bad key can never lock you out.
+
+To unlink a remote, open an Access Panel and take it back out of the grid. You can't take it out through the remote's own view, that cell is visible but locked there, so a misclick in the mines can't strand you from your storage. Putting it back in won't re-link it, you hand it to the Heart again.
+
+Controller players: the network view is fully navigable on a pad, and the Steam Deck opens its keyboard for the search box. The remote key is the one keyboard-only thing.
 
 [size=5][b]The network view[/b][/size]
 
 [list]
-[*]The vanilla storage UI over every connected unit at once. Withdraw and deposit exactly like a chest.
-[*]A real search box: full text editing, an X to clear it, Ctrl+arrows jump whole words. Auto-focus toggle so it's ready when the panel opens.
-[*]14 category filters, plus a "Museum needs" lens for what the museum still wants.
-[*]227 items now sort under the right filter: wood is out of Fishing, wallpapers and floorings show up under their filter again, cooked seafood is out of Fish, and more.
+[*]The vanilla storage UI over every connected unit at once, 45 cells a page. Withdraw and deposit exactly like a chest.
+[*]A real search box with full text editing, an X to clear it, and an auto-focus toggle so it's ready the moment the panel opens.
+[*]14 category filters that put things where you'd expect, plus a "Museum needs" lens for what the museum still wants.
+[*]Five sort modes, and your pick is remembered.
 [*]Value badges per stack or per item. Big numbers abbreviate, like 12.3k.
-[*]Five sort modes. Your pick is remembered.
-[*]Quick-stack your backpack into the network with one button.
-[*]Crafting stations pull from the network automatically. The units are real chests, so it just works.
+[*]Quick-stack tops the network up from your backpack with one button: every stack of a kind the network already holds. Remotes are the one thing it skips.
+[*]Crafting stations pull from your crates automatically. That one is vanilla behavior: the units are real chests, so they qualify.
 [/list]
 
 [size=5][b]Good to know[/b][/size]
 
 [list]
-[*]You can squeeze between crates: solid core, walkable edges.
-[*]A unit that still holds items takes five pickaxe swings to break. Empty ones break in one.
-[*]Blocks and crates with no heart behave as plain chests, so your items are never locked away.
-[*]If a deposit doesn't fit, the rest comes straight back with a toast. Nothing is silently eaten.
+[*]Your items live in the real chest inventories of the placed units, which the game's own save system writes. If the game crashes with the view open, nothing is lost.
+[*]A unit that still holds items takes five pickaxe swings to break, with a warning on the first. Empty ones break in one. Break a full one anyway and the contents drop to the ground, like any chest.
+[*]If a deposit doesn't fully fit, the rest comes straight back with a toast. Nothing is silently eaten.
+[*]You can squeeze between crates: solid core, walkable edges, so a wall of storage is not a fence.
 [/list]
-
-The mod never holds your items. Everything lives in the real chest inventories of the placed units, which the game's own save system writes. If the game crashes with the view open, nothing is lost.
 
 [size=5][b]Install[/b][/size]
 
 [list=1]
-[*]Extract the zip into [font=Courier New]Fields of Mistria/mods/[/font] so the file [font=Courier New]mods/yads/manifest.json[/font] exists.
+[*]Extract the zip into the game's install folder under [font=Courier New]mods/[/font] (Steam: right-click Fields of Mistria, Manage, Browse local files), so that [font=Courier New]mods/yads/manifest.json[/font] exists. Not the [font=Courier New]%LOCALAPPDATA%[/font] folder, that one only holds saves and logs.
 [*]Run the Mods of Mistria Installer, tick [b]YADS[/b], hit Install.
 [*]Play. Recipes unlock automatically, existing saves included.
 [/list]
 
+Built and tested against the August 2026 game patch.
+
 [size=5][b]Before uninstalling[/b][/size]
 
-[b]Empty your units first.[/b] The engine drops placed objects it no longer recognizes, together with everything inside them. Backpack items are safe.
+[b]Empty every unit first.[/b] Uninstalling destroys any items left inside placed units: the engine discards objects it no longer recognizes and their inventories go with them, there is no recovery. Move everything to your backpack or into plain chests before removing the mod. Backpack items are safe.
 
 [size=5][b]Credits[/b][/size]
 
@@ -101,6 +119,6 @@ Applied Energistics 2, Refined Storage and Magic Storage for the genre. Built wi
 
 Source code: [url=https://github.com/Mihai-Tudosa/YADS]github.com/Mihai-Tudosa/YADS[/url]
 
-Found a bug? Report it with your log file ([font=Courier New]%LOCALAPPDATA%\FieldsOfMistria\mod_data\yads\logs[/font]).
+Found a bug? Report it with your log file ([font=Courier New]%LOCALAPPDATA%\FieldsOfMistria\mod_data\yads\logs\yads.log[/font]).
 
 If YADS saved you an afternoon of chest-diving, you can buy me a coffee: [url=https://paypal.me/tudosamihai]paypal.me/tudosamihai[/url]. The mod is free and stays free.
