@@ -103,7 +103,34 @@ The two UI assets behind the value badges and the crafting tab:
     see THE SPRITE FONT below.  Every other sprite this file emits is
     byte-identical to v1.4.
 
-Run:  python make_art.py [output_mod_dir]
+Beta 1.3 art pass -- the CHEST TWINS ("crates"):
+
+  * 59 vanilla chests gain a networked twin.  NO BODY ART IS GENERATED FOR ONE,
+    EVER: a mod prototype may name a vanilla sprite (`Furniture.gml:216`,
+    `:291-293` resolve all four chest roles from plain strings), so a twin sets
+    `sprite = "spr_furniture_basic_chest_v01_spring_closed"` and its three
+    siblings and IS that chest -- same pixels, same frame counts, same
+    durations, vanilla's own `poly_` Shapes and its `shadow_manifest.json`
+    entry, and not one derived vanilla pixel in our zip.
+  * All the "this is network storage" identity therefore moves into the two
+    overlay strips this file DOES generate, and it generates them PER FAMILY,
+    not per chest: within each of the 14 visual families the chests are pure
+    palette swaps of one drawing, so their silhouettes -- and hence the rim the
+    glow traces, the canvas and the pivot -- are pixel-identical.  14 families
+    x (8 glow + 4 offline) = 28 sprites for 59 twins.
+  * The families live in `crates/`: `_kit.py` (this file's own vocabulary,
+    moved there so there is one copy), `_geom.py` (generated from the game
+    archive by `tools/gen_crate_geom.py`, checked in so the build stays
+    hermetic), and one `fam_<family>.py` per family, auto-discovered.
+  * ONE new drawing in the whole wave: `spr_ui_item_netstor_converter` and its
+    outline sibling, the item icon for the Network Converter -- the tool that
+    turns a chest into its twin and back.  Six files (2 PNG, 2 meta, 2 poly),
+    emitted beside the remote's for the same reason the remote's are outside
+    the unit loop, and its `outlines.json` row is hand-added like the remote's.
+  * `tools/regen_gate.py` proves the three authored units still regenerate
+    byte-identically.  Run it after any change here.
+
+Run:  python make_art.py [output_mod_dir] [--families=a,b]
 """
 
 import os
@@ -128,8 +155,23 @@ except ImportError:  # pragma: no cover
 
 HERE = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 
-if len(sys.argv) > 1:
-    MOD = sys.argv[1].replace("\\", "/").rstrip("/")
+# `--families=a,b` renders only those crate families' contact-sheet rows, so a
+# family agent's review loop is a two-row sheet instead of a 45-row one.  It
+# does NOT restrict what is written into the mod tree -- a partial art tree is
+# not a thing this generator is allowed to produce.  Flags are stripped before
+# the positional output directory is read, and an unknown one is fatal rather
+# than silently treated as a path.
+_POSITIONAL = [a for a in sys.argv[1:] if not a.startswith("--")]
+FAMILY_FILTER = None
+for _flag in [a for a in sys.argv[1:] if a.startswith("--")]:
+    if _flag.startswith("--families="):
+        FAMILY_FILTER = [s for s in _flag.split("=", 1)[1].split(",") if s]
+    else:
+        sys.exit("make_art: unknown flag %r (only --families=<a,b> exists)"
+                 % _flag)
+
+if _POSITIONAL:
+    MOD = _POSITIONAL[0].replace("\\", "/").rstrip("/")
 elif os.environ.get("FOM_MOD_DIR"):
     MOD = os.environ["FOM_MOD_DIR"].replace("\\", "/").rstrip("/")
 else:
@@ -161,175 +203,30 @@ GAME_ASSETS_ZIP = ("C:/Program Files (x86)/Steam/steamapps/common/"
                    "Fields of Mistria/assets.bak.zip")
 
 # --------------------------------------------------------------------------
-# Palette.  Wood + metal ramps are R8 Q6 verbatim (the vanilla basic-chest
-# histogram).  The cyan ramp is ours; four tones, tuned to sit against the
-# cool blue-grey metal without leaving the game's saturation range.
-# --------------------------------------------------------------------------
-
-TR = None                      # transparent (skip the pixel)
-BK = (0x00, 0x00, 0x00, 255)   # linework            #000000
-
-W1 = (0x4a, 0x22, 0x1b, 255)   # wood darkest        #4a221b
-W2 = (0x67, 0x33, 0x26, 255)   # wood mid-dark       #673326
-W3 = (0x90, 0x4d, 0x35, 255)   # wood main           #904d35
-W4 = (0xaa, 0x5e, 0x37, 255)   # wood light          #aa5e37
-
-M1 = (0x1f, 0x1e, 0x2c, 255)   # metal/slate darkest #1f1e2c
-M2 = (0x3d, 0x3f, 0x53, 255)   # metal/slate dark    #3d3f53
-M3 = (0x59, 0x5d, 0x71, 255)   # metal/slate mid     #595d71
-M4 = (0x76, 0x7f, 0x96, 255)   # metal/slate light   #767f96
-
-C1 = (0x14, 0x51, 0x5f, 255)   # cyan deep / recess  #14515f
-C2 = (0x2e, 0x9f, 0xb2, 255)   # cyan mid            #2e9fb2
-C3 = (0x5f, 0xdc, 0xe8, 255)   # cyan bright         #5fdce8
-C4 = (0xc2, 0xfb, 0xff, 255)   # cyan pale core      #c2fbff
-
-WHITE = (0xff, 0xff, 0xff, 255)
-
-# The crafting menu's page colour.  #f9edf8 is 47279 of the 96k opaque pixels of
-# `spr_ui_woodcrafting_backplate.png` in the game archive -- the crafting UI is
-# PAPER, not the dark plate the rest of this file is authored against.  Never
-# drawn into a sprite; used only to composite the sub-category icon onto its real
-# background in the contact sheet, because "does the cyan seam still read?" is a
-# question about paper and cannot be answered over the sheet's dark checker.
-PAPER = (0xf9, 0xed, 0xf8, 255)
-
-# one-step-darker map, used for CRT scanlines on the access panel screen
-DARKER = {C4: C2, C3: C2, C2: C1, C1: M1, M1: M1}
-
-# --------------------------------------------------------------------------
-# v1.4 GLOW-ONLY luminance ramp.
+# THE SHARED KIT -- `crates/_kit.py`.
 #
-# The `_glow` overlays are the one asset the runtime TINTS: `top.image_blend`
-# carries the tri-state fill signal (green empty / yellow in use / red full on
-# blocks; cyan on the heart and the panel).  A blend is a per-channel
-# MULTIPLY, so a tintable strip must carry LUMINANCE ONLY -- the v1.3 cyan
-# strips could not be tinted at all: C3 #5fdce8 x c_red = (95,0,0), a maroon
-# at 37% of a real red, while c_yellow gave (95,220,0) and collapsed toward
-# the c_lime result (V14-C 1.4, worked against these very bytes).  Near-white
-# x tint IS the tint, so ONE strip serves all four states.
+# The palette, the Canvas, the tintable G-ramp, the pulse tables, the sad-face
+# bubble, the meta.toml templates, the save + poly-pairing helpers and every
+# audit live there.  They MOVED, unchanged, when the Beta 1.3 chest twins
+# arrived: a crate family draws with the same three rungs, writes the same
+# metas and passes the same audits as the three authored units, and there must
+# be exactly ONE definition of each -- a forked palette is a set that stops
+# matching itself one edit later.  `tools/regen_gate.py` proves the move cost
+# zero bytes of output, which is the only form that claim is worth anything in.
 #
-# THE TINTS ARE PASTEL AS OF BETA 1.0, and this table is generated from the
-# SHIPPED values in `yads_glow_tint` (gml/network.gml) -- that function is the
-# single source of truth and this file only mirrors it.  A channel at 0 erases
-# that channel outright, so the old saturated primaries painted a neon nothing
-# else in Mistria's palette resembles; lifting the zeroed channels to 130 keeps
-# the same three hues and the same traffic-light reading in the game's softer
-# range.  The cyan never moved -- it is the same make_color_rgb(64, 200, 214)
-# the status popup's fill bar uses, so world and UI agree on the set's colour.
+# The reasoning that used to sit here moved with the code, in full: the wood
+# and metal ramps are the vanilla basic-chest histogram verbatim, the cyan ramp
+# is ours, and the near-white G1/G2/G3 rungs exist because `image_blend` is a
+# per-channel MULTIPLY, so a coloured glow strip cannot be tinted at all.
 #
-#   rung   art        x green        x yellow       x red          x cyan
-#   G3   #ffffff   (130,255,130) (255,250,160) (255,130,130) ( 64,200,214)
-#   G2   #d8d8d8   (110,216,110) (216,211,135) (216,110,110) ( 54,169,181)
-#   G1   #a8a8a8   ( 85,168, 85) (168,164,105) (168, 85, 85) ( 42,131,140)
-#
-# so the 8-frame pulse survives every tint as the SAME three brightness rungs
-# of one hue: in each tint's strongest channel the rungs land at 255/216/168
-# (39 and 48 apart), and 214/181/140 for the cyan whose strongest channel is
-# itself only 214 -- which is exactly what the v1.3 cyan art could not do.
-# Expected read per state, over the closed pose:
-#   empty  -> a soft mint rim/under-glow/seam; green dominant, R and B at half
-#   in use -> the same shapes in a warm cream-yellow (R full, G near-full, B
-#             lifted to 160 so it reads butter rather than acid)
-#   full   -> a soft coral red, neither the old dark maroon nor a fire alarm
-#   heart/panel -> the set's own cyan, unchanged since v1.3
-#   untinted (c_white -- what the highlight path leaves for a frame indoors,
-#            V14-C 1.2/1.3) -> a plain white rim: wrong VALUE, never wrong hue
-#
-# COLOUR-BLIND CAVEAT, recorded not fixed: the pastel pass costs about 37% of
-# the green/yellow separation under a deuteranopia simulation and halves red's
-# luminance escape hatch.  Owner-requested aesthetics; the fix if it ever needs
-# one is a non-colour cue, not a return to primaries.  See CLAUDE.md.
-#
-# Deliberately SEPARATE constants from C1/C2/C3.  The bodies, the icons and
-# the sad-face `_offline` strips are DRAWN, never tinted (their blend stays
-# c_white), so they keep the family's cyan; only the glow generators below may
-# use G1/G2/G3, and the audit in main() enforces that the strips stay grey.
+# NOTE for a copy of this file run from a scratch build directory (see Output
+# locations above): bring `crates/` with it.  The generator is no longer one
+# file.
 # --------------------------------------------------------------------------
 
-G1 = (0xa8, 0xa8, 0xa8, 255)   # glow dim rung       #a8a8a8
-G2 = (0xd8, 0xd8, 0xd8, 255)   # glow mid rung       #d8d8d8
-G3 = (0xff, 0xff, 0xff, 255)   # glow bright rung    #ffffff
-
-# The four `image_blend` values the runtime sets, plus the untinted fallback.
-# KEEP IN LOCKSTEP WITH `yads_glow_tint` (gml/network.gml) -- the GML is the
-# live value, this is a mirror for the contact sheet's tint row and for
-# `check_tint_ramp` below.  They drifted once (the table still said
-# c_lime/c_yellow/c_red long after Beta 1.0 went pastel) and the preview
-# silently became a picture of a game that no longer exists.
-TINTS = (
-    ("green  empty",         (130, 255, 130)),
-    ("yellow in use",        (255, 250, 160)),
-    ("red    full",          (255, 130, 130)),
-    ("cyan   heart/panel",   ( 64, 200, 214)),
-    ("white  untinted",      (255, 255, 255)),
-)
-
-# Which glow frame the contact sheet tints.  Frame 2 is the only phase where
-# all three rungs are on screen at once (PULSE[2] = 2 lights the rim at G3/G2/
-# G1 by drop, the seam at G2, the spark at G3, and the out-of-phase diodes at
-# G2), so one image per tint is enough to judge the whole ramp.
-TINT_FRAME = 2
-
-# --------------------------------------------------------------------------
-# Tiny canvas helper
-# --------------------------------------------------------------------------
-
-
-class Canvas(object):
-    def __init__(self, w, h):
-        self.w = w
-        self.h = h
-        self.im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        self.px = self.im.load()
-
-    def set(self, x, y, c):
-        if c is None:
-            return
-        if 0 <= x < self.w and 0 <= y < self.h:
-            self.px[x, y] = c
-
-    def get(self, x, y):
-        if 0 <= x < self.w and 0 <= y < self.h:
-            return self.px[x, y]
-        return (0, 0, 0, 0)
-
-    def hline(self, x0, x1, y, c):
-        for x in range(x0, x1 + 1):
-            self.set(x, y, c)
-
-    def vline(self, x, y0, y1, c):
-        for y in range(y0, y1 + 1):
-            self.set(x, y, c)
-
-    def rect(self, x0, y0, x1, y1, c):
-        for y in range(y0, y1 + 1):
-            self.hline(x0, x1, y, c)
-
-    def blit_rows(self, x0, y0, rows, legend):
-        """rows: list of strings; legend: char -> colour ('.' == skip)."""
-        for dy, row in enumerate(rows):
-            for dx, ch in enumerate(row):
-                if ch == ".":
-                    continue
-                self.set(x0 + dx, y0 + dy, legend[ch])
-
-
-# --------------------------------------------------------------------------
-# Shared geometry constants (canvas / pivot / baseline)
-# --------------------------------------------------------------------------
-
-FRAME_W, FRAME_H = 40, 48
-OFF_H, OFF_V = 16.0, 24.0      # sprite pivot, identical to a vanilla chest
-CENTRE = 15.5                  # content is symmetric about x=15.5
-BASELINE = 37                  # last opaque row -> plants like a vanilla chest
-
-OPENING_DUR = 0.075            # R8 Q1 table
-BOUNCE_DUR = 0.1               # R8 Q1 table
-GLOW_LEN = 8                   # v1.3: slowed from 0.1 (user: "very fast"); 1.6s full cycle
-GLOW_DUR = 0.2
-OFFLINE_LEN = 4                # v1.3 sad face; 1.4s full cycle -- deliberately
-OFFLINE_DUR = 0.35             # slower than the glow, so "asleep" reads as calm
+import crates                    # the Beta 1.3 chest-twin family registry
+import links                     # the Beta 1.3 connectors (netstor_link_*)
+from crates._kit import *        # noqa: F401,F403  (the shared vocabulary)
 
 # 7 poses per unit; 4 of them are the shipped states, 3 are strip frames.
 POSES = ("closed", "opening0", "opening1", "opened", "bounce0", "bounce1", "bounce2")
@@ -765,17 +662,9 @@ def panel_frame(pose):
 # the strips stay 8 x 40x48 @ 0.2s and every meta and runtime wire holds.
 # --------------------------------------------------------------------------
 
-PULSE = (0, 1, 2, 3, 3, 2, 1, 0)     # triangle wave over the 8 frames
-GTONE = (G1, G2, G3, G3)             # -> three distinct luminance rungs
-SEAM_G = (G1, G1, G2, G2)
-
-
-def rim(cv, x, y, p, drop=0):
-    """One rim-light pixel.  `drop` biases a row down the pulse so the glow
-    reads as pooling at the unit's foot and only creeping up at full pulse."""
-    lvl = p - drop
-    if lvl >= 0:
-        cv.set(x, y, GTONE[lvl])
+# PULSE / GTONE / SEAM_G and the one-pixel `rim()` helper are in
+# `crates/_kit.py`: the crate families pulse on the same triangle wave and the
+# same three rungs, so there is one definition, not two.
 
 
 def under_glow(cv, g, f, p):
@@ -898,61 +787,20 @@ FRAMER = {"heart": heart_frame, "block": block_frame, "panel": panel_frame}
 # "error" a warm colour would imply.
 # --------------------------------------------------------------------------
 
-# 10 wide x 9 tall, bubble body only; the eyes, the frown and the tail are
-# drawn on top so the blink and the bob stay one-liners.  Column 0..9 maps to
-# canvas 11..20, i.e. still centred on x=15.5 like every other sprite here --
-# only the tail is deliberately asymmetric, because a centred tail reads as a
-# drip hanging off the bubble instead of as a pointer at the unit below.
-FACE_ROWS = (
-    "...KKKK...",
-    ".KKLLLLKK.",
-    "KLLLLLLLDK",
-    "KLLLLLLLDK",     # <- eyes row (cols 2 and 7)
-    "KLLLLLLLDK",
-    "KLLLLLLLDK",     # <- frown crown (cols 4,5)
-    "KLLLLLLLDK",     # <- frown ends  (cols 3,6)
-    ".KKLLDDKK.",
-    "...KKKK...",
-)
-FACE_LEGEND = {"K": BK, "L": M4, "D": M3}
-
+# FACE_ROWS / FACE_LEGEND / FACE_BOB / FACE_BLINK and the bubble drawer
+# `face_frame()` are in `crates/_kit.py`.  Only the two PLACEMENT numbers below
+# are the authored units' own: column 0..9 of the 10-wide bubble maps to canvas
+# 11..20, i.e. centred on x=15.5 like every other sprite here.  A crate family
+# cannot use FACE_X -- its canvas is 32, 48 or 56 wide with the content centred
+# on a different pivot -- so `kit.face_origin_x()` derives the same number from
+# the sprite pivot instead.
 FACE_X = 11                                  # 10 wide, centred on x=15.5
 FACE_Y = {"heart": 1, "block": 2, "panel": 2}
-FACE_BOB = (0, -1, 0, 1)                     # the spec'd 1px hover cycle
-FACE_BLINK = 3                               # blink on the DIPPED frame, so
-                                             # the loop reads as one slow sigh
-                                             # instead of a nervous twitch
 
 
 def offline_frame(unit, f):
     """Render one 40x48 frame of a unit's disconnected overlay."""
-    cv = Canvas(FRAME_W, FRAME_H)
-    x0 = FACE_X
-    y0 = FACE_Y[unit] + FACE_BOB[f]
-    cv.blit_rows(x0, y0, FACE_ROWS, FACE_LEGEND)
-
-    # eyes -- two dark dots, squeezed shut into 2px lines on the blink frame.
-    # Both states are symmetric about the bubble's x centre (col 4.5).
-    if f == FACE_BLINK:
-        cv.hline(x0 + 2, x0 + 3, y0 + 3, BK)
-        cv.hline(x0 + 6, x0 + 7, y0 + 3, BK)
-    else:
-        cv.set(x0 + 2, y0 + 3, BK)
-        cv.set(x0 + 7, y0 + 3, BK)
-
-    # frown -- an arch, crown high and ends dropping away.  Drawn a full row
-    # clear of the bubble's bottom shoulder so the ends never merge into the
-    # outline, which at this scale is the difference between a mouth and a
-    # smudge.
-    cv.hline(x0 + 4, x0 + 5, y0 + 5, BK)
-    cv.set(x0 + 3, y0 + 6, BK)
-    cv.set(x0 + 6, y0 + 6, BK)
-
-    # the thought-bubble tail, pointing down-left at the unit.  Both pixels
-    # touch the bubble's rounded corner, so the strip stays orphan-free.
-    cv.set(x0 + 0, y0 + 7, C1)
-    cv.set(x0 + 1, y0 + 8, C1)
-    return cv
+    return face_frame(KIT, FRAME_W, FRAME_H, FACE_X, FACE_Y[unit], f)
 
 
 def offline_heart(f):
@@ -1151,6 +999,69 @@ def icon_remote():
     cv.set(6, 11, C3)                      # ...and its two tails
     cv.set(11, 11, C3)
     cv.rect(8, 12, 9, 13, C4)              # the source, brightest
+    return cv
+
+
+def icon_converter():
+    """Network Converter (Beta 1.3): the coupler that turns a chest into its
+    networked twin, and back again.
+
+    Like `icon_remote` it has NO plinth, for the same reason -- it is not a
+    placeable and never stands on the ground.  It must also not read as a
+    second remote, so the silhouette is the discriminator rather than the
+    palette: a WIDE body with two prongs pushing out of its sides, against the
+    remote's tall bare slab.  Nothing else in the set has anything sticking
+    out of it, so the two are told apart at 18px without looking at the face.
+
+    The face says what the tool does.  A DOUBLE-headed arrow, not a single
+    one: conversion ships with its downgrade in the same wave, so the icon has
+    to promise a door that opens both ways.  Palette is the set's own -- the
+    M1..M4 slate of the copper-and-glass body, the C1..C4 cyan of the network
+    it wires you into -- and the lens interior is FILLED with C1 before the
+    arrow is cut into it, so the orphan audit has nothing to find however the
+    heads are later re-shaped.
+
+    Symmetric about x = 8.5, like every other icon here.
+    """
+    cv = Canvas(ICON_W, ICON_W)
+
+    # ---- the body: rows 3..14, columns 2..15, chamfered at the top --------
+    cv.hline(4, 13, 3, BK)                 # top edge
+    cv.set(3, 4, BK)
+    cv.set(14, 4, BK)
+    cv.hline(4, 13, 4, M4)                 # top bevel, lit
+    for y in range(5, 14):                 # side rails and the slate fill
+        cv.set(2, y, BK)
+        cv.set(15, y, BK)
+        cv.hline(3, 14, y, M2)
+        cv.set(3, y, M3)
+        cv.set(14, y, M1)
+    cv.hline(3, 14, 14, BK)                # bottom edge
+
+    # ---- the two prongs, rows 7..10, one per side -------------------------
+    # Drawn AFTER the body so each one eats the body's own outline column at
+    # rows 8..9: a prong that stops at the shell reads as a sticker, one that
+    # merges into it reads as metal coming out of the housing.
+    for (px0, px1) in ((0, 2), (15, 17)):
+        cv.hline(px0, px1, 7, BK)
+        cv.hline(px0, px1, 8, M4)
+        cv.hline(px0, px1, 9, M3)
+        cv.hline(px0, px1, 10, BK)
+    cv.set(0, 8, BK)
+    cv.set(0, 9, BK)
+    cv.set(17, 8, BK)
+    cv.set(17, 9, BK)
+
+    # ---- the lens, and the reversible arrow cut into it -------------------
+    cv.rect(4, 6, 13, 12, BK)              # bezel
+    cv.rect(5, 7, 12, 11, C1)              # opaque ground, then the motif
+    cv.hline(6, 11, 9, C3)                 # the shaft
+    cv.set(5, 9, C4)                       # the two tips, brightest
+    cv.set(12, 9, C4)
+    cv.set(6, 8, C3)                       # and the four head shoulders
+    cv.set(6, 10, C3)
+    cv.set(11, 8, C3)
+    cv.set(11, 10, C3)
     return cv
 
 
@@ -1540,82 +1451,21 @@ def check_font_against_vanilla():
 
 
 # --------------------------------------------------------------------------
-# meta.toml writers (R8 §2.2 templates verbatim; meta_properties.id omitted
-# on purpose -- MOMI mints it, TOMLInstaller.cs:61-67)
+# META_WORLD_STATIC / META_WORLD_ANIM / META_ICON / META_CRAFT_ICON /
+# META_FONT / META_SHAPE, and `write_text` / `save_strip` / `save_poly`, are in
+# `crates/_kit.py`.  R8 2.2 templates verbatim; `meta_properties.id` is omitted
+# on purpose (MOMI mints it, TOMLInstaller.cs:61-67).
+#
+# `save_strip` now takes its frame size from the Canvases it is given and its
+# PIVOT as a required argument.  Both were globals here, and both had to stop
+# being: a crate family's strip is 32x40 or 56x48 and pivots on 12/23 or 24/24,
+# and a silently-inherited 16.0/24.0 is a glow that slides off its chest with
+# nothing in the build to notice.
+#
+# The one template that did NOT move is `FIDDLE_FONT_HEADER` below: it is not a
+# sprite meta at all but the preamble of a fiddle TABLE, it names this file in
+# its own text, and nothing outside the sprite font will ever want it.
 # --------------------------------------------------------------------------
-
-META_WORLD_STATIC = (
-    '[meta_properties]\n'
-    'asset_kind = "Animation"\n'
-    '\n'
-    '[asset_properties]\n'
-    'frame_size = [{w}, {h}]\n'
-    'atlas = "Default"\n'
-    '\n'
-    '[asset_properties.offset]\n'
-    'horizontal = {oh}\n'
-    'vertical = {ov}\n'
-)
-
-META_WORLD_ANIM = (
-    '[meta_properties]\n'
-    'asset_kind = "Animation"\n'
-    '\n'
-    '[asset_properties]\n'
-    'frame_size = [{w}, {h}]\n'
-    'frame_len = {n}\n'
-    'duration = {d}\n'
-    'atlas = "Default"\n'
-    '\n'
-    '[asset_properties.offset]\n'
-    'horizontal = {oh}\n'
-    'vertical = {ov}\n'
-)
-
-META_ICON = (
-    '[meta_properties]\n'
-    'asset_kind = "Animation"\n'
-    '\n'
-    '[asset_properties]\n'
-    'frame_size = [18, 18]\n'
-    'atlas = "UI"\n'
-    '\n'
-    '[asset_properties.offset]\n'
-    'horizontal = "Middle"\n'
-    'vertical = "Middle"\n'
-)
-
-# The vanilla crafting category icons carry NO offset block whatsoever -- checked
-# byte-for-byte against four of them.  Do not add one out of symmetry with
-# META_ICON: the crafting menu places these by fiddle constant, and a "Middle"
-# pivot would shift ours 7px off every vanilla neighbour in the same list.
-META_CRAFT_ICON = (
-    '[meta_properties]\n'
-    'asset_kind = "Animation"\n'
-    '\n'
-    '[asset_properties]\n'
-    'frame_size = [14, 14]\n'
-    'atlas = "UI"\n'
-)
-
-# The sprite-font strip's meta is `spr_ui_hud_font_itemcount.meta.toml` from the
-# archive with the frame count changed and the minted `id` dropped -- same key
-# order, same `duration = 0.1` (a sprite font is never played: the draw loop
-# picks the frame by hand with `draw_sprite_ext(sprite, index, ...)`, so the
-# value is inert and is carried only so our meta and vanilla's are diffable),
-# same `atlas = "UI"`, and NO offset block -- the draw loop adds
-# `sprite_get_xoffset/yoffset` to the glyph position (`Anchor.gml:1096-1100`),
-# so any pivot at all would shove every badge off its anchor.
-META_FONT = (
-    '[meta_properties]\n'
-    'asset_kind = "Animation"\n'
-    '\n'
-    '[asset_properties]\n'
-    'frame_size = [{w}, {h}]\n'
-    'frame_len = {n}\n'
-    'duration = 0.1\n'
-    'atlas = "UI"\n'
-)
 
 # `[netstor_count]` for the fiddle merge.  GENERATED, not hand-authored, and
 # that is deliberate: the glyph bitmaps and the advances are one design, and a
@@ -1646,53 +1496,13 @@ FIDDLE_FONT_HEADER = (
 )
 
 
-# Every vanilla sprite ships a paired `poly_` bounds Shape under `shapes/`
-# mirroring `animations/` (R1 §2.E; R1 risk 9 -- "ship a poly for every
-# sprite").  MOMI mints `id` and auto-links `required_assets` to the paired
-# spr_ asset, so both are omitted here.  All world sprites of a vanilla chest
-# share ONE box sized to the resting (closed) pose, not per-frame -- the glow
-# overlay follows the same rule.
-META_SHAPE = (
-    '[meta_properties]\n'
-    'asset_kind = "Shape"\n'
-    '\n'
-    '[asset_properties]\n'
-    'kind = "box"\n'
-    'offset = [{ox}, {oy}]\n'
-    'dimensions = [{w}, {h}]\n'
-)
-
-
-def write_text(path, text):
-    with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
-
-
-def save_strip(directory, name, frames, duration=None):
-    """frames: list of Canvas, all FRAME_W x FRAME_H.  Writes PNG + meta."""
-    n = len(frames)
-    strip = Image.new("RGBA", (FRAME_W * n, FRAME_H), (0, 0, 0, 0))
-    for i, cv in enumerate(frames):
-        strip.paste(cv.im, (i * FRAME_W, 0))
-    png = "%s/%s.png" % (directory, name)
-    strip.save(png)
-    if n == 1:
-        meta = META_WORLD_STATIC.format(w=FRAME_W, h=FRAME_H, oh=OFF_H, ov=OFF_V)
-    else:
-        meta = META_WORLD_ANIM.format(w=FRAME_W, h=FRAME_H, n=n, d=duration,
-                                      oh=OFF_H, ov=OFF_V)
-    write_text("%s/%s.meta.toml" % (directory, name), meta)
-    return png
-
-
 def save_icon(directory, name, cv):
     png = "%s/%s.png" % (directory, name)
     cv.im.save(png)
     write_text("%s/%s.meta.toml" % (directory, name), META_ICON)
     # icon shape: the whole 18x18 frame around the "Middle" pivot, verbatim
     # vanilla (poly_ui_item_furniture_basic_chest_v01: [-9,-9] / [18,18])
-    write_text("%s/poly_%s.meta.toml" % (ICON_SHAPE_DIR, name[4:]),
-               META_SHAPE.format(ox=-9, oy=-9, w=18, h=18))
+    save_poly(ICON_SHAPE_DIR, name, dict(ox=-9, oy=-9, w=18, h=18))
     return png
 
 
@@ -1705,8 +1515,8 @@ def save_craft_icon(name, cv):
     png = "%s/%s.png" % (CRAFT_ICON_DIR, name)
     cv.im.save(png)
     write_text("%s/%s.meta.toml" % (CRAFT_ICON_DIR, name), META_CRAFT_ICON)
-    write_text("%s/poly_%s.meta.toml" % (CRAFT_ICON_SHAPE_DIR, name[4:]),
-               META_SHAPE.format(ox=0, oy=0, w=CRAFT_ICON_W, h=CRAFT_ICON_W))
+    save_poly(CRAFT_ICON_SHAPE_DIR, name,
+              dict(ox=0, oy=0, w=CRAFT_ICON_W, h=CRAFT_ICON_W))
     return png
 
 
@@ -1722,8 +1532,8 @@ def save_font(cv):
     write_text("%s/%s.meta.toml" % (FONT_DIR, FONT_SPRITE),
                META_FONT.format(w=FONT_CELL_W, h=FONT_CELL_H,
                                 n=len(FONT_ORDER)))
-    write_text("%s/poly_%s.meta.toml" % (FONT_SHAPE_DIR, FONT_SPRITE[4:]),
-               META_SHAPE.format(ox=0, oy=0, w=FONT_CELL_W, h=FONT_CELL_H))
+    save_poly(FONT_SHAPE_DIR, FONT_SPRITE,
+              dict(ox=0, oy=0, w=FONT_CELL_W, h=FONT_CELL_H))
 
     body = ["[%s]" % FONT_TABLE,
             '\tsprite = "%s"' % FONT_SPRITE,
@@ -1735,118 +1545,120 @@ def save_font(cv):
     return png
 
 
-def world_shape_box(closed_im):
-    """Box hitbox for a unit's world sprites: the resting (closed) pose's
-    opaque bounds, grown 1px per side and clamped to the frame, expressed
-    relative to the sprite pivot (16, 24)."""
-    x0, y0, x1, y1 = closed_im.getbbox()          # x1/y1 exclusive
-    x0 = max(0, x0 - 1)
-    y0 = max(0, y0 - 1)
-    x1 = min(FRAME_W, x1 + 1)
-    y1 = min(FRAME_H, y1 + 1)
-    return dict(ox=x0 - int(OFF_H), oy=y0 - int(OFF_V), w=x1 - x0, h=y1 - y0)
+# --------------------------------------------------------------------------
+# Sanity checks -- `audit`, `count_tones`, `tint_image` and `check_tint_ramp`
+# are in `crates/_kit.py`, together with the two GENERALISED strip audits that
+# replaced the blocks that used to sit inline in main():
+#
+#   audit_glow_strip()     <= 3 tones, every tone grey and on the G-ramp,
+#                          binary alpha, no lit pixel above `lid_safe`, and --
+#                          new -- at least one lit pixel in EVERY frame.  An
+#                          all-transparent glow passed every old rule and would
+#                          ship a family with no network marking at all.
+#   audit_offline_strip()  <= 4 tones and all of them BK/M4/M3/C1, binary
+#                          alpha, and the bubble clear of the body -- with the
+#                          body's top row as a PARAMETER, because it is 11/13/14
+#                          for the three units here and ranges 4..14 across the
+#                          fourteen crate families.
+# --------------------------------------------------------------------------
 
 
 # --------------------------------------------------------------------------
-# Sanity checks -- run on every generated canvas
+# THE CHEST TWINS' BODIES -- read from the archive, FOR THE PREVIEW ONLY.
+#
+# A crate family's glow is meaningless as a bare strip: it is a rim-light drawn
+# to hug a chest that this generator never draws.  So the contact sheet
+# composites it over the real vanilla frames, which means reading them out of
+# the game archive.
+#
+# THAT READ CANNOT REACH THE MOD TREE, and does not: every byte under `yads/`
+# comes from `crates/_geom.py`, which is checked in.  This is the same standing
+# that `check_font_against_vanilla()` has -- the archive is consulted, never
+# depended on, and its absence degrades one picture rather than the build.
+# `tools/regen_gate.py` reports `art_preview.png` separately for exactly this
+# reason.
 # --------------------------------------------------------------------------
 
 
-def audit(name, im, orphans=True):
-    """Returns a list of problem strings (empty == clean).
+def load_crate_bodies(families):
+    """{family: {"closed": Image, "opened": Image}} -- or {} if unreachable.
 
-    `orphans=False` for the glow overlays: isolated single pixels are the
-    POINT there (diodes, the travelling spark), not a drawing mistake."""
-    problems = []
-    px = im.load()
-    alphas = set()
-    for y in range(im.height):
-        for x in range(im.width):
-            alphas.add(px[x, y][3])
-    bad = alphas - {0, 255}
-    if bad:
-        problems.append("%s: non-binary alpha %s" % (name, sorted(bad)))
-    if not orphans:
-        return problems
-    # orphan pixels: an opaque pixel with no opaque 4-neighbour inside its frame
-    for fx in range(0, im.width, FRAME_W if im.width % FRAME_W == 0 else im.width):
-        fw = FRAME_W if im.width % FRAME_W == 0 else im.width
-        for y in range(im.height):
-            for x in range(fx, min(fx + fw, im.width)):
-                if px[x, y][3] == 0:
-                    continue
-                nb = 0
-                for (nx, ny) in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                    if fx <= nx < fx + fw and 0 <= ny < im.height and px[nx, ny][3]:
-                        nb += 1
-                if nb == 0:
-                    problems.append("%s: orphan pixel at (%d,%d)" % (name, x, y))
-    return problems
+    One pass over the archive's name list, then two reads per family."""
+    import io
+    import zipfile
 
-
-def tint_image(im, rgb):
-    """Simulate one `image_blend` pass: per-channel multiply against `rgb`,
-    alpha untouched (V14-C §1.4 -- the engine's own blend semantics).  Used
-    for the contact sheet's tint row and for `check_tint_ramp` below; the game
-    does this on the GPU, this is only how we prove the art survives it."""
-    out = im.copy()
-    px = out.load()
-    for y in range(out.height):
-        for x in range(out.width):
-            r, g, b, a = px[x, y]
-            if a == 0:
-                continue
-            px[x, y] = (r * rgb[0] // 255, g * rgb[1] // 255,
-                        b * rgb[2] // 255, a)
+    zip_path = os.environ.get("FOM_ASSETS_ZIP", GAME_ASSETS_ZIP)
+    if os.environ.get("YADS_NO_ARCHIVE") or not os.path.isfile(zip_path):
+        return {}
+    out = {}
+    with zipfile.ZipFile(zip_path) as zf:
+        index = {}
+        for entry in sorted(zf.namelist()):     # sorted: first-wins must not
+            index.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)  # be luck
+        for fam in families:
+            geom = fam.GEOM
+            member = crates.MEMBERS[geom.rep]
+            got = {}
+            for role in ("closed", "opened"):
+                entry = index.get(member["sprites"][role].lower() + ".png")
+                if entry is None:
+                    break
+                im = Image.open(io.BytesIO(zf.read(entry))).convert("RGBA")
+                got[role] = im.crop((0, 0, geom.width, geom.height))
+            if len(got) == 2:
+                out[fam.FAMILY] = got
     return out
 
 
-def check_tint_ramp():
-    """Prove the G-ramp is actually tintable, arithmetically, not by eye:
-    the bright rung must come through as the tint itself, and the three rungs
-    must stay far apart in the channel the tint leaves strongest.
+def over_body(body, overlay, pad=0):
+    """Composite an overlay frame onto a copy of the body.
 
-    Both rules are written to survive the Beta 1.0 pastel palette.  The old
-    pair could not: "a channel the tint kills must read 0" is VACUOUS once no
-    channel is zero, and "separation in the first lit channel" picked a
-    255-channel by luck under the saturated primaries and a half-lit one under
-    the pastels, where it false-alarms.  Strongest-channel is what the rule
-    always meant."""
-    problems = []
-    for label, rgb in TINTS:
-        out = []
-        for rung in (G3, G2, G1):
-            out.append(tuple(rung[i] * rgb[i] // 255 for i in range(3)))
-        # Hue fidelity, stated as the property that actually makes ONE strip
-        # serve every state: near-white x tint IS the tint.  This binds G3 to
-        # pure white -- dim the bright rung and every tint arrives desaturated
-        # and wrong, which is the failure the v1.3 cyan art had.
-        for i in range(3):
-            if out[0][i] != rgb[i]:
-                problems.append("tint %s: bright rung is not the tint in "
-                                "channel %d (%d, want %d)"
-                                % (label, i, out[0][i], rgb[i]))
-        # Rung separation in the tint's strongest channel: the 8-frame pulse
-        # has to stay legible as three distinct brightnesses after the multiply.
-        strongest = max(range(3), key=lambda i: rgb[i])
-        col = [o[strongest] for o in out]
-        seps = (col[0] - col[1], col[1] - col[2])
-        if min(seps) < 24:
-            problems.append("tint %s: rungs collapse in channel %d, "
-                            "separation %s" % (label, strongest, seps))
-    return problems
+    `pad` rows were added ABOVE the body on the overlay's canvas (the offline
+    strip's `face_pad`), so the body is pushed down by the same amount -- which
+    is exactly what the pivot shift does at runtime."""
+    if pad:
+        comp = Image.new("RGBA", (body.width, body.height + pad), (0, 0, 0, 0))
+        comp.alpha_composite(body, (0, pad))
+    else:
+        comp = body.copy()
+    comp.alpha_composite(overlay)
+    return comp
 
 
-def count_tones(im):
-    """Distinct opaque colours in a strip -- used to prove the glow overlays
-    really do pulse with a handful of discrete tones and no alpha ramp."""
-    px = im.load()
-    tones = set()
-    for y in range(im.height):
-        for x in range(im.width):
-            if px[x, y][3]:
-                tones.add(px[x, y])
-    return tones
+def crate_preview_rows(fam, glow_frames, off_frames, bodies):
+    """The three rows a family agent judges, per the art recon's review loop.
+
+    Judge THESE, never the bare strip.  Accept only if the rim reads as light
+    ON the object rather than as an outline replacing its linework, the
+    under-glow does not make it look like it is sitting in a tray, all four
+    tints are distinguishable, and the sad face is clear of the body in every
+    bobbed frame -- over the OPENED lid as well as the closed one, because the
+    vanilla lid travels far further than the netstor block's boards do and the
+    overlay instance is never re-written."""
+    geom = fam.GEOM
+    body = bodies.get(fam.FAMILY)
+    if body is None:
+        return [("crate %-11s NO BODY: the game archive is unreachable, so "
+                 "these are BARE STRIPS -- glow 8f | offline 4f" % fam.FAMILY,
+                 [cv.im for cv in glow_frames] + [cv.im for cv in off_frames])]
+
+    pad = geom.face_pad
+    rows = []
+    rows.append(("crate %-11s glow over the CLOSED pose   (8 frames @ %.2gs)"
+                 % (fam.FAMILY, GLOW_DUR),
+                 [over_body(body["closed"], cv.im) for cv in glow_frames]))
+    rows.append(("crate %-11s glow over the OPENED pose   (the lid travels; "
+                 "the overlay does not)" % fam.FAMILY,
+                 [over_body(body["opened"], cv.im) for cv in glow_frames]))
+    tint_row = [over_body(body["closed"],
+                          tint_image(glow_frames[TINT_FRAME].im, rgb))
+                for _, rgb in TINTS]
+    tint_row += [over_body(body["closed"], cv.im, pad) for cv in off_frames]
+    rows.append(("crate %-11s TINT SIM (frame %d x image_blend)  green=empty | "
+                 "yellow=in use | red=full | cyan | white=untinted    then "
+                 "OFFLINE 4f over closed (+%d pad rows)"
+                 % (fam.FAMILY, TINT_FRAME, pad), tint_row))
+    return rows
 
 
 # --------------------------------------------------------------------------
@@ -1916,15 +1728,14 @@ def main():
     for unit in ("heart", "block", "panel"):
         frame = FRAMER[unit]
         row_images = []
-        box = world_shape_box(frame("closed").im)
+        box = world_shape_box(frame("closed").im, (OFF_H, OFF_V))
         body_top = FRAME_H            # highest opaque row over ALL base poses
 
         for state, poses, dur in states:
             frames = [frame(p) for p in poses]
             name = "spr_furniture_netstor_%s_%s" % (unit, state)
-            png = save_strip(WORLD_DIR, name, frames, dur)
-            write_text("%s/poly_%s.meta.toml" % (WORLD_SHAPE_DIR, name[4:]),
-                       META_SHAPE.format(**box))
+            png = save_strip(WORLD_DIR, name, frames, dur, (OFF_H, OFF_V))
+            save_poly(WORLD_SHAPE_DIR, name, box)
             produced.append((png, FRAME_W * len(frames), FRAME_H))
             im = Image.open(png).convert("RGBA")
             problems += audit(name, im)
@@ -1934,45 +1745,22 @@ def main():
         # ---- the CONNECTED glow overlay ------------------------------------
         glow_frames = [GLOW[unit](f) for f in range(GLOW_LEN)]
         gname = "spr_furniture_netstor_%s_glow" % unit
-        gpng = save_strip(WORLD_DIR, gname, glow_frames, GLOW_DUR)
-        write_text("%s/poly_%s.meta.toml" % (WORLD_SHAPE_DIR, gname[4:]),
-                   META_SHAPE.format(**box))
+        gpng = save_strip(WORLD_DIR, gname, glow_frames, GLOW_DUR,
+                          (OFF_H, OFF_V))
+        save_poly(WORLD_SHAPE_DIR, gname, box)
         produced.append((gpng, FRAME_W * GLOW_LEN, FRAME_H))
         gim = Image.open(gpng).convert("RGBA")
-        problems += audit(gname, gim, orphans=False)
-        tones = count_tones(gim)
-        if len(tones) > 3:
-            problems.append("%s: %d tones, spec allows 2-3 luminance rungs"
-                            % (gname, len(tones)))
-        # v1.4: the tinted strip must be pure LUMINANCE.  Any colour left in
-        # it survives the multiply and skews (or kills) every runtime tint --
-        # this is precisely how the v1.3 cyan strips failed (V14-C §1.4).
-        for t in sorted(tones):
-            if not (t[0] == t[1] == t[2]):
-                problems.append("%s: non-grey glow pixel %s -- untintable"
-                                % (gname, str(t[:3])))
-            elif t not in (G1, G2, G3):
-                problems.append("%s: off-ramp glow tone %s" % (gname, str(t[:3])))
+        problems += audit_glow_strip(gname, gim, FRAME_W)
 
         # ---- the DISCONNECTED sad-face overlay -----------------------------
         off_frames = [OFFLINE[unit](f) for f in range(OFFLINE_LEN)]
         oname = "spr_furniture_netstor_%s_offline" % unit
-        opng = save_strip(WORLD_DIR, oname, off_frames, OFFLINE_DUR)
-        write_text("%s/poly_%s.meta.toml" % (WORLD_SHAPE_DIR, oname[4:]),
-                   META_SHAPE.format(**box))
+        opng = save_strip(WORLD_DIR, oname, off_frames, OFFLINE_DUR,
+                          (OFF_H, OFF_V))
+        save_poly(WORLD_SHAPE_DIR, oname, box)
         produced.append((opng, FRAME_W * OFFLINE_LEN, FRAME_H))
         oim = Image.open(opng).convert("RGBA")
-        problems += audit(oname, oim)
-        otones = count_tones(oim)
-        if len(otones) > 4:
-            problems.append("%s: %d tones, spec allows 3 + black outline"
-                            % (oname, len(otones)))
-        # the face must hover CLEAR of the unit in every bobbed frame, over
-        # every base pose -- the whole point of putting it above the sprite.
-        face_bot = oim.getbbox()[3] - 1
-        if face_bot >= body_top:
-            problems.append("%s: face reaches row %d but %s body starts at "
-                            "row %d" % (oname, face_bot, unit, body_top))
+        problems += audit_offline_strip(oname, oim, FRAME_W, body_top)
 
         ic = ICONS[unit]()
         ol = outline_canvas(ic)
@@ -2042,6 +1830,216 @@ def main():
     preview.append(("netstor_remote  (item icon only -- not a placeable)   "
                     "icon | outline", [rem.im, rem_ol.im]))
 
+    # ---- the Network Converter's item icon (Beta 1.3) ----------------------
+    # Outside the unit loop for exactly the remote's reason: no object
+    # prototype, so no world strip, no glow, no offline face, no shape box
+    # around a placed body -- an 18x18 icon, its pure-white outline sibling and
+    # the two Shape polys save_icon writes for them, and nothing else.
+    #
+    # `outlines.json` IS NOT WRITTEN FROM HERE either.  The
+    # spr_ui_item_netstor_converter -> _outline row is hand-added in the same
+    # change as this art; a missing entry costs the icon its outline (an
+    # spr_nothing substitute plus an error line) and only the ship gate's grep
+    # would see it.
+    conv = icon_converter()
+    conv_ol = outline_canvas(conv)
+    c1 = save_icon(ICON_DIR, "spr_ui_item_netstor_converter", conv)
+    c2 = save_icon(ICON_DIR, "spr_ui_item_netstor_converter_outline", conv_ol)
+    produced.append((c1, 18, 18))
+    produced.append((c2, 18, 18))
+    problems += audit("spr_ui_item_netstor_converter", conv.im)
+    problems += audit("spr_ui_item_netstor_converter_outline", conv_ol.im)
+    preview.append(("netstor_converter  (item icon only -- not a placeable)   "
+                    "icon | outline", [conv.im, conv_ol.im]))
+
+    # ---- Beta 1.3 CONNECTORS (netstor_link_*) ------------------------------
+    # Their own loop, beside the unit loop rather than inside it: a connector
+    # is a `rug = true` prototype on a 32x32 (Cloud: 32x48) canvas, so it has
+    # none of the four chest-lid states the unit loop is built around, and it
+    # is not a chest twin so it has no place in `crates/`.
+    # `links.py` owns every pixel; this loop only saves, audits and previews.
+    #
+    # D2 "WOVEN" MAKES THIS LOOP FAN OUT OVER SIXTEEN ADJACENCY MASKS.  The
+    # BODY is one 16-frame strip whose frame index IS the mask (the runtime
+    # writes `renderer.image_index = mask` with `image_speed = 0`, exactly as
+    # the engine's own fence autotiler does), and the OVERLAY -- which cannot
+    # use image_index, because its frames are its animation -- fans out into
+    # sixteen separately named 8-frame sprites the runtime selects by name.
+    # `..._glow` with no suffix still ships and is byte-identical to `_v0`: it
+    # is what the object prototype's `top_sprite` names and the fail-soft an
+    # art layer older than the GML falls back to.
+    #
+    # `outlines.json` IS NOT WRITTEN FROM HERE, for the remote's and the
+    # converter's reason: it is hand-maintained, and the four
+    # spr_ui_item_netstor_link_* -> _outline rows are added by hand in the same
+    # change as this art.  D2 adds no icons, so it needs no row.
+    for conn in links.CONNECTORS:
+        cw, ch = conn.canvas
+        # ONE Shape for every strip, as everywhere else in this file -- but cut
+        # from the UNION of them, not from the resting pose.  See
+        # `Connector.bounds()`: the Cloud's body lives in its overlay twelve
+        # rows above anything its base sprite paints, and the carpet's fringe
+        # leaves the footprint on whichever side a run ends.
+        box = shape_box(conn.bounds(), conn.canvas, conn.pivot)
+
+        # ---- the BODY: one frame per adjacency mask ------------------------
+        base_frames = conn.base_frames()
+        bname = links.world_sprite(conn.slug)
+        bpng = save_strip(WORLD_DIR, bname, base_frames, conn.base_dur,
+                          conn.pivot)
+        save_poly(WORLD_SHAPE_DIR, bname, box)
+        produced.append((bpng, cw * conn.base_len, ch))
+        bim = Image.open(bpng).convert("RGBA")
+        problems += audit(bname, bim, frame_w=cw)
+        problems += links.audit_autotile_body(bname, bim, cw, cw,
+                                              conn.edge_at, conn.edge_tone)
+
+        # ---- the GLOW: the prototype's strip, then sixteen variants --------
+        glow_frames = conn.glow_frames(0)
+        gname = links.glow_sprite(conn.slug)
+        gpng = save_strip(WORLD_DIR, gname, glow_frames, GLOW_DUR, conn.pivot)
+        save_poly(WORLD_SHAPE_DIR, gname, box)
+        produced.append((gpng, cw * GLOW_LEN, ch))
+        gim = Image.open(gpng).convert("RGBA")
+        # no `lid_safe`: nothing on a connector has a moving silhouette, which
+        # is the only thing that rule protects against.
+        problems += audit_glow_strip(gname, gim, cw)
+
+        glow_variants = []
+        for m in range(links.MASK_LEN):
+            vframes = conn.glow_frames(m)
+            vname = links.glow_variant_sprite(conn.slug, m)
+            vpng = save_strip(WORLD_DIR, vname, vframes, GLOW_DUR, conn.pivot)
+            save_poly(WORLD_SHAPE_DIR, vname, box)
+            produced.append((vpng, cw * GLOW_LEN, ch))
+            vim = Image.open(vpng).convert("RGBA")
+            problems += audit_glow_strip(vname, vim, cw)
+            glow_variants.append(vframes)
+
+        # ---- the OFFLINE face ----------------------------------------------
+        # One shapeless marker for the flat three -- their BODY carries the
+        # shape and is still drawn when the network is down.  Sixteen for the
+        # Cloud, whose body IS the overlay.
+        off_frames = conn.offline_frames(0)
+        oname = links.offline_sprite(conn.slug)
+        opng = save_strip(WORLD_DIR, oname, off_frames, OFFLINE_DUR,
+                          conn.pivot)
+        save_poly(WORLD_SHAPE_DIR, oname, box)
+        produced.append((opng, cw * OFFLINE_LEN, ch))
+        oim = Image.open(opng).convert("RGBA")
+        problems += links.audit_link_offline_strip(oname, oim, cw)
+
+        for m in conn.offline_masks():
+            vframes = conn.offline_frames(m)
+            vname = links.offline_variant_sprite(conn.slug, m)
+            vpng = save_strip(WORLD_DIR, vname, vframes, OFFLINE_DUR,
+                              conn.pivot)
+            save_poly(WORLD_SHAPE_DIR, vname, box)
+            produced.append((vpng, cw * OFFLINE_LEN, ch))
+            vim = Image.open(vpng).convert("RGBA")
+            problems += links.audit_link_offline_strip(vname, vim, cw)
+
+        iname = links.icon_sprite(conn.slug)
+        ic = conn.icon()
+        ol = outline_canvas(ic)
+        k1 = save_icon(ICON_DIR, iname, ic)
+        k2 = save_icon(ICON_DIR, iname + "_outline", ol)
+        produced.append((k1, 18, 18))
+        produced.append((k2, 18, 18))
+        problems += audit(iname, ic.im)
+        problems += audit(iname + "_outline", ol.im)
+
+        # ---- preview: never the bare strips -------------------------------
+        # A connector's glow is a marking ON a body, exactly like a crate
+        # twin's, so it is judged composited -- and under D2 that means the
+        # glow variant composited over the BODY FRAME OF THE SAME MASK, which
+        # is the only pairing the runtime ever draws.
+        preview.append(("netstor_%-12s AUTOTILE  16 masks 0..15 "
+                        "(1*N + 2*W + 4*E + 8*S), body + its own glow variant, "
+                        "TINTED cyan as the runtime draws it"
+                        % conn.slug,
+                        [over_body(base_frames[m].im,
+                                   tint_image(glow_variants[m][TINT_FRAME].im,
+                                              dict(TINTS)["cyan   heart/panel"]))
+                         for m in range(links.MASK_LEN)]))
+        preview.append(("netstor_%-12s base 16f (mask order) | icon | outline"
+                        % conn.slug,
+                        [cv.im for cv in base_frames] + [ic.im, ol.im]))
+        # The animation is judged on ONE mask -- the straight E/W run, which is
+        # what a player looks at for thirty tiles at a time.
+        run = links.A_EW
+        preview.append(("netstor_%-12s glow v%d (E|W run)  (8 frames @ %.2gs, "
+                        "over that mask's body)" % (conn.slug, run, GLOW_DUR),
+                        [over_body(base_frames[run].im, cv.im)
+                         for cv in glow_variants[run]]))
+        trow = [over_body(base_frames[run].im,
+                          tint_image(glow_variants[run][TINT_FRAME].im, rgb))
+                for _, rgb in TINTS]
+        trow += [over_body(base_frames[run].im, cv.im)
+                 for cv in conn.offline_frames(run)]
+        preview.append(("netstor_%-12s TINT SIM (v%d frame %d x image_blend)  "
+                        "green | yellow | red | cyan=the set | white=untinted "
+                        "   then OFFLINE 4f @ %.2gs"
+                        % (conn.slug, run, TINT_FRAME, OFFLINE_DUR), trow))
+
+    # ---- the money composition --------------------------------------------
+    # The only picture that answers the question these four pieces exist to
+    # answer: does a run of connectors between two units read as ONE LIT PATH,
+    # or as a row of separate glowing objects?  Bare strips cannot say, and
+    # neither can a single connector -- the spark's 2px-per-frame step is
+    # tuned so that it leaves one 16px tile exactly as the next tile's spark
+    # leaves that one, and only a chain shows whether that lands.
+    block_closed = Image.open("%s/spr_furniture_netstor_block_closed.png"
+                              % WORLD_DIR).convert("RGBA")
+
+    # TINTED, unlike every other row on this sheet, and that is the point.
+    # Elsewhere the glow is shown raw because a crate's strip has to survive
+    # four different tints.  A connector's has to survive exactly one -- the
+    # set cyan, which `yads_glow_tint` returns for any non-CRATE kind -- so the
+    # only honest picture of a path is the coloured one, and the crates that
+    # bracket it are painted the green they wear when they are empty.
+    LINK_CYAN = dict(TINTS)["cyan   heart/panel"]
+    CRATE_GREEN = dict(TINTS)["green  empty"]
+
+    def chained(pieces, phase):
+        """One frame of a chain.  `pieces` are (connector, footprint_x); the
+        two crates bracket them.  Everything is placed by its FOOTPRINT, not by
+        its canvas, which is the only way art on three different canvas sizes
+        can be made to stand on one ground line.
+
+        EVERY PIECE IS DRAWN AT MASK E|W, which is what the runtime computes
+        for this exact layout: the crates conduct, so the two end connectors see
+        a neighbour on their open side just as the middle ones see connectors.
+        Mixing families changes nothing -- our adjacency asks "is there a
+        connector or a unit there", never "is it the same key", which is where
+        it parts company with vanilla's fence autotiler
+        (Furniture.gml:2181 matches on object_id)."""
+        run = links.A_EW
+        width = pieces[-1][1] + 16 + 24 + 4
+        comp = Image.new("RGBA", (width, 64), (0, 0, 0, 0))
+        blk = block_closed.copy()
+        blk.alpha_composite(tint_image(glow_block(phase).im, CRATE_GREEN))
+        for bx in (4, pieces[-1][1] + 16):
+            comp.alpha_composite(blk, (bx - 4, 45 - BASELINE))
+        for (conn, fx) in pieces:
+            foot_bottom = links.CQ1 if conn is links.CLOUD else links.Q1
+            body = conn.base_frames()[run].im.copy()
+            body.alpha_composite(tint_image(conn.glow(run, phase).im,
+                                            LINK_CYAN))
+            comp.alpha_composite(body, (fx - links.Q0, 45 - foot_bottom))
+        return comp
+
+    carpet_run = [(links.CARPET, 28 + 16 * i) for i in range(3)]
+    preview.append(("THE MONEY SHOT -- three Magic Carpets between two crates, "
+                    "all at mask 6 (E|W), TINTED as the runtime draws them "
+                    "(cyan connectors, empty-green crates), glow phases "
+                    "0 | 2 | 4 | 6 -- does it read as ONE path?",
+                    [chained(carpet_run, f) for f in (0, 2, 4, 6)]))
+    mixed = [(c, 28 + 16 * i) for i, c in enumerate(links.CONNECTORS)]
+    preview.append(("MIXED RUN -- carpet | tile | cable | cloud between two "
+                    "crates, same mask, same tints, glow phases 0 | 2 | 4 | 6",
+                    [chained(mixed, f) for f in (0, 2, 4, 6)]))
+
     # ---- the crafting sub-category icon (v1.5) -----------------------------
     # Outside the unit loop on purpose: it belongs to a MENU, not to a placeable,
     # so it has no world strip, no glow, no outline and no 18x18 sibling.
@@ -2089,6 +2087,71 @@ def main():
     preview.append(("sprite font %s (5x7 cells, 15 frames, UI atlas, 4x)   "
                     "strip | 999 | 1.2k | 9.9k | 999k | 1.9m | 12345"
                     % FONT_SPRITE, font_row))
+
+    # ---- Beta 1.3 crate twins ---------------------------------------------
+    # Two strips per FAMILY and nothing else: no body art, no icon, no
+    # `outlines.json` entry, no TOML.  The body is the vanilla chest named by
+    # string; its icon, its outline entry, its `poly_` Shapes and its shadow
+    # come with it.  What we add is the glow that says "this one is on the
+    # network" and the sad face that says "this one is not".
+    #
+    # The whole tree is always written.  `--families=` only narrows the contact
+    # sheet, because a generator that emitted a partial art tree would leave a
+    # mod that installs and is missing sprites.
+    crate_families = crates.selected(FAMILY_FILTER)
+    bodies = load_crate_bodies(crate_families)
+    for fam in crates.FAMILIES:
+        geom = fam.GEOM
+        params = getattr(fam, "PARAMS", None)
+
+        # The paired Shape for BOTH strips is the VANILLA body's closed bounds
+        # about the body's own pivot -- the same "one box, sized to the resting
+        # pose" rule the three units follow.  It is pivot-relative, so the
+        # offline strip's extra `face_pad` rows and shifted pivot cancel out and
+        # the two strips legitimately share one box.
+        box = shape_box(geom.closed_bbox, geom.canvas, geom.pivot)
+
+        if hasattr(fam, "glow"):
+            glow_frames = [fam.glow(KIT, geom, f) for f in range(GLOW_LEN)]
+        else:
+            glow_frames = [crate_glow(KIT, geom, f, params)
+                           for f in range(GLOW_LEN)]
+        gname = crates.glow_sprite(fam.FAMILY)
+        gpng = save_strip(WORLD_DIR, gname, glow_frames, GLOW_DUR, geom.pivot)
+        save_poly(WORLD_SHAPE_DIR, gname, box)
+        produced.append((gpng, geom.width * GLOW_LEN, geom.height))
+        gim = Image.open(gpng).convert("RGBA")
+        problems += audit_glow_strip(gname, gim, geom.width,
+                                     lid_safe=geom.lid_safe)
+        # A diode is the one thing a family places by hand into the glow, so it
+        # is the one thing that can land off the object or up in the lid band.
+        # Say which pixel, not just "the bbox is too high".
+        for (dx, dy) in (getattr(params, "diodes", ()) or ()):
+            if not (0 <= dx < geom.width and 0 <= dy < geom.height):
+                problems.append("%s: diode (%d,%d) is off the %dx%d canvas"
+                                % (gname, dx, dy, geom.width, geom.height))
+            elif dy < geom.lid_safe:
+                problems.append("%s: diode (%d,%d) is above lid_safe %d -- the "
+                                "lid moves out from under it"
+                                % (gname, dx, dy, geom.lid_safe))
+
+        if hasattr(fam, "offline"):
+            off_frames = [fam.offline(KIT, geom, f) for f in range(OFFLINE_LEN)]
+        else:
+            off_frames = [sad_face(KIT, geom, f) for f in range(OFFLINE_LEN)]
+        oname = crates.offline_sprite(fam.FAMILY)
+        ow, oh = geom.offline_canvas
+        opng = save_strip(WORLD_DIR, oname, off_frames, OFFLINE_DUR,
+                          geom.offline_pivot)
+        save_poly(WORLD_SHAPE_DIR, oname, box)
+        produced.append((opng, ow * OFFLINE_LEN, oh))
+        oim = Image.open(opng).convert("RGBA")
+        problems += audit_offline_strip(oname, oim, ow,
+                                        geom.top_all + geom.face_pad,
+                                        canvas_h=oh)
+
+        if fam in crate_families:
+            preview += crate_preview_rows(fam, glow_frames, off_frames, bodies)
 
     problems += check_tint_ramp()
 
@@ -2143,7 +2206,12 @@ def main():
         print("audit: binary alpha OK, no orphan pixels, glow tone count OK, "
               "glow strips grey-only and tintable")
     print("preview: %s" % PREVIEW)
+    # The audit used to print and exit 0, which put the only report of a real
+    # defect in the middle of a hundred lines of verification table.  With
+    # fourteen families being authored in parallel that is a defect that ships.
+    # A clean run is unchanged; a dirty one is now visible to a shell.
+    return 1 if (problems or not allok) else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

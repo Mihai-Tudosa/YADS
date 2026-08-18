@@ -11,3 +11,8 @@ provision_test_save.py
 __pycache__/
 *.pyc
 .scratch/
+
+# Build artifacts (the release zip is attached to GitHub releases, not committed;
+# the generated GML is a paste-intermediate that already lives inside network.gml).
+*.zip
+crate_unit_keys.generated.gml

@@ -52,7 +52,7 @@
 // for why a blocked swing still REACHES us and is therefore countable.
 
 #macro YADS_MOD "yads"
-#macro YADS_VERSION "Beta 1.2"
+#macro YADS_VERSION "Beta 1.3"
 
 // The Remote Access Panel's default hotkey, and the fallback the config read
 // falls back TO. A function key on purpose, for the same reason PAGE_UP and
@@ -318,6 +318,52 @@
 #macro YADS_PICK_TTL 600
 #macro YADS_PICK_DUCK 600
 
+// THE UNIT KINDS - what an ObjectId of ours IS, and the only vocabulary any
+// "is this one of ours" test in the mod is allowed to speak.
+//
+// network.gml section 1 builds an ObjectId-indexed table holding one of these
+// per content key the mod resolved and `undefined` for every other object in the
+// game, and every identity site reads that table. Nothing anywhere compares an
+// object_id against a named id any more, which is the point: HEART and PANEL are
+// singletons, but CRATE is a SET - netstor_block today, plus every
+// netstor_crate_* twin the content layer ships - and a test written against one
+// id silently excludes the rest.
+//
+// 0/1/2 is not arbitrary. Section 9's glow cache has shipped storing exactly
+// those three numbers in its per-unit `kind` field and yads_glow_tint switches on
+// them, so these macros are chosen to BE that encoding rather than to need a
+// translation at the boundary.
+//
+// UNLIKE YADS_SORT_* THESE ARE FREE TO RENUMBER. Nothing persists a kind: it is
+// derived from the fiddle key when the id memo is built and dies with the memo on
+// save.game_loaded. There is no save format here to break.
+#macro YADS_KIND_HEART 0
+#macro YADS_KIND_CRATE 1
+#macro YADS_KIND_PANEL 2
+
+// LINK is the Beta 1.3 CONNECTOR, and it is the first kind that is not a chest.
+//
+// A connector is a RUG prototype (`rug = true`): no collision, no inventory, no
+// interaction, laid on the floor and legal both UNDER a unit and BESIDE one. It
+// exists to extend adjacency - a carpet path across the farm joins the two ends -
+// and it carries nothing itself.
+//
+// WHAT MAKES IT SAFE IS THAT IT HOLDS NOTHING, and that fact is enforced by the
+// engine rather than by us. A rug prototype declares no interaction_chest, so
+// Furniture.gml:758-767 never gives the node an `inventory`, so
+// Furniture.gml:869-874 never pushes it to STORAGE_NODES - and every custody
+// surface in this mod is gated on `inventory != undefined` (network.gml section
+// 2's members/deposit_targets/panels, and section 8 reads only those). A LINK is
+// therefore excluded from the aggregate, from deposits, from withdrawals, from
+// the reconciler and from pick protection BY CONSTRUCTION, not by a filter
+// somebody has to remember to add. Section 8 took zero edits for this feature.
+//
+// 3 IS THE NEXT VALUE AND THAT IS ALL IT IS. The 0/1/2 above were chosen to BE
+// section 9's on-disk-free glow encoding; 3 extends it. yads_glow_tint switches
+// on `kind != YADS_KIND_CRATE`, so a LINK falls into the cyan arm with no edit
+// at all (network.gml).
+#macro YADS_KIND_LINK 3
+
 // Localization keys, from fiddle/mods/yads/ui.toml. The key is the
 // file path minus .toml plus the entry key (MOD_ANATOMY.md:136-166).
 #macro YADS_LOCAL_ROOT "mods/yads/ui/"
@@ -352,6 +398,11 @@ function yads_runtime() {
             glow: undefined,             // connectivity cache for the unit glow
             picks: undefined,            // per-node pickaxe swing counts (section 10)
             config: undefined,           // lazily-read player settings (section 1b)
+            // The converter's three fields, and they are three rather than one
+            // because they have three different lifetimes (section 6c):
+            convert_ask: undefined,      // the confirm popup is up; ladder, gate 0g and the hotkey all refuse under it
+            convert_do: undefined,       // the popup said yes; the tick performs it next frame
+            convert: undefined,          // THE ESCROW - items in flight (network.gml section 11)
         };
     }
     return global.__yads;
@@ -415,8 +466,9 @@ function yads_config() {
     // hand should be typing the same names the API documents. UPPERCASE is not
     // pedantry: the single-character arm tests ord(name) against ord("0")..ord("9") and
     // ord("A")..ord("Z") only, so "e" resolves to undefined and takes the
-    // warn-and-no-hotkey path. Chords are NOT available; yads_install_hotkeys
-    // carries the reason.
+    // warn-and-no-hotkey path. Chords/pad were absent from the 0.15.1 payload;
+    // MOMI 0.15.5's payload NOW SHIPS them (2026-08-15 patch audit) — this mod
+    // still registers single keys only, a 1.4 candidate, not a capability gap.
     //
     // THE FILE IS NO LONGER THE ONLY WRITER, AND IT IS NO LONGER THE FAST ONE.
     // The picker's Rebind button captures a key in-game and commits it here and
@@ -602,7 +654,55 @@ function yads_tick() {
     //     the doctrine as "every suppression we write is undone by us" with no
     //     exceptions at all; putting nothing above the restore is what makes that
     //     true rather than conditional on every function below it never failing.
+    //
+    // AND THE COUPLING THAT BUYS, STATED RATHER THAN LEFT IMPLICIT: being first
+    // means the ESCROW SWEEPER BELOW IS DOWNSTREAM OF THIS CALL. mmapi wraps each
+    // installer in try/catch and skips the rest of that installer's body on a
+    // throw (mmapi.gml:71-84), and this whole tick is one installer
+    // (mmapi_register(yads_tick), :592) - so a throw in here takes the sweeper
+    // with it for the frame. The picks registry is persistent state, so a
+    // data-shaped fault repeats every frame and the sweeper then never runs
+    // again this session, leaving a stranded escrow to be closed only by
+    // save.game_saving or dropped by game_loaded.
+    //
+    // ACCEPTED, on the size of what is above and what is below. The poll is a
+    // two-field loop over an array bounded by the units a player swung at in the
+    // last ten seconds, while the restore it performs is the one failure with no
+    // way back (a crate welded shut in the save, past uninstallation). The
+    // ordering is right; the dependency is simply real, and undocumented was the
+    // only wrong thing about it.
     yads_pick_poll(_rt);
+
+    // THE CONVERT ESCROW SWEEPER, and it is second on purpose - immediately
+    // after the restore that must be first, and ahead of everything that could
+    // throw before it.
+    //
+    // The escrow is the only place in this mod where a player's items live
+    // outside an inventory, and it is not serialized (no modsave sidecar). It is
+    // normally cleared inside the statement that created it, so in the steady
+    // state this is one struct read; what it exists for is the frame after a
+    // throw stranded one, and the rule it enforces is that such a frame is the
+    // LAST one - yads_convert_recover refunds and clears rather than retrying.
+    // See section 11 of network.gml for the stage ladder it walks.
+    if (_rt[$ "convert"] != undefined) {
+        yads_convert_recover(_rt);
+    }
+
+    // ...and then the conversion the confirm popup asked for LAST frame. It runs
+    // here, from the tick, rather than in the popup's own tap callback, for the
+    // reason every widget in this mod records a request instead of acting: a
+    // callback that erased and rewrote a grid node would be doing it from inside
+    // ANCHOR's own node walk, one frame before the tick that owns every other
+    // mutation. Costs one struct read.
+    //
+    // BELOW THE SWEEPER, AND THAT IS AN ORDERING DEPENDENCY RATHER THAN A STYLE
+    // CHOICE: yads_convert_check refuses outright while an escrow is live (gate
+    // 0g), so a stranded one has to be cleared before a new conversion is
+    // attempted or the player's confirm is silently eaten by the previous
+    // frame's failure.
+    if (_rt[$ "convert_do"] != undefined) {
+        yads_convert_apply(_rt);
+    }
 
     if (_rt.booted != true) {
         _rt.booted = true;
@@ -836,14 +936,42 @@ function yads_ensure_recipes(_rt) {
     // screen or during some transitions (API_REFERENCE.md:284-288).
     if (!instance_exists(obj_ari)) { return; }
 
-    // EVERY ITEM THE MOD SHIPS BELONGS IN THIS LIST, and a new one is not
-    // optional. recipe_is_default fires on a new game only, so an item missing
-    // from here is locked forever on every save that already exists - and if it
-    // were ever the only item in its crafting sub-category, the whole tab would
-    // vanish too, because CraftingMenu.gml:199-206 drops a sub-category none of
-    // whose items are unlocked.
+    // ------------------------- THE RECIPE KEY LIST SEAM -------------------------
+    //
+    // EVERY ITEM THE MOD SHIPS *WITH A RECIPE* BELONGS IN THIS LIST, and a new one
+    // is not optional. recipe_is_default fires on a new game only, so an item
+    // missing from here is locked forever on every save that already exists - and
+    // if it were ever the only item in its crafting sub-category, the whole tab
+    // would vanish too, because CraftingMenu.gml:199-206 drops a sub-category none
+    // of whose items are unlocked.
+    //
+    // THIS IS A DIFFERENT LIST FROM UNIT_KEYS IN network.gml SECTION 1, and the
+    // difference is deliberate rather than an oversight to be tidied up later.
+    // UNIT_KEYS is "what is a network member" and is keyed by OBJECT. This is
+    // "what does the player need unlocked" and is keyed by ITEM. The Beta 1.3
+    // crate twins are in the first and MUST NOT be added to the second: they carry
+    // no recipe at all (they are made by converting a vanilla chest, not by
+    // crafting), and CraftingMenu.gml:1373-1383 never pushes a recipe-less item
+    // into any sub-category, so unlocking them would buy nothing and 59 pointless
+    // ARI.unlock_recipe calls per save load. An item added here without a recipe
+    // in fiddle/items/ is a no-op at best; the rule is "recipe in the fiddle,
+    // key in this list", both or neither.
+    //
+    // netstor_converter IS IN THIS LIST AND HAD TO BE. It is the sole source of
+    // all 59 twins and it has a recipe, so an existing save that never sees this
+    // unlock has the whole Beta 1.3 content wave locked behind an item it cannot
+    // craft - and "recipe in the fiddle, key in this list" is the rule the
+    // paragraph above states. It is also the counter-example that makes the rule
+    // legible: the twins go in UNIT_KEYS and NOT here; the converter goes here
+    // and NOT in UNIT_KEYS, because it is not placeable at all.
+    //
+    // A key the installed content set does not carry is silently skipped by the
+    // try_ lookup below, the same as UNIT_KEYS.
     static ITEM_KEYS = ["netstor_heart", "netstor_block", "netstor_panel",
-        "netstor_remote"];
+        "netstor_remote", "netstor_converter", "netstor_link_carpet",
+        "netstor_link_tile", "netstor_link_cables", "netstor_link_cloud"];
+    //
+    // ----------------------- END THE RECIPE KEY LIST SEAM -----------------------
 
     for (var _i = 0; _i < array_length(ITEM_KEYS); _i++) {
         var _item_id = try_string_to_item_id(ITEM_KEYS[_i]);
@@ -1598,6 +1726,20 @@ function yads_loc_name(_grid) {
 //     kept because they are the invariants this mod actually depends on rather
 //     than implications of someone else's flag. The picker clause is what stops
 //     a second press from stacking a second popup on the first.
+//   _rt.convert_ask / _rt.convert - the converter's two states, and they are on
+//     this list for exactly the reason the two above are. convert_ask is a third
+//     Menu.Popup of ours; without it the confirm popup was the one surface in
+//     the mod defended by nothing but somebody else's pause flag, which is both
+//     the doctrine gap and inconsistent with the interact ladder, which has
+//     named convert_ask since the feature shipped. convert is the ESCROW, i.e.
+//     "a player's items are in flight outside any inventory", which is never a
+//     state in which to build a menu.
+//
+//     NEITHER WAS EXPLOITABLE, AND THAT IS THE POINT OF WRITING THEM DOWN. The
+//     popup pauses (PauseStatus.MENU, so game_paused above already refuses) and
+//     the escrow is closed by the sweeper at boot.gml's tick head, strictly
+//     above yads_remote_press in the same tick - so the guard was tick ORDER and
+//     a pause flag, not a stated invariant. Two struct reads make it stated.
 //
 // Read by the press handler AND re-read at the moment a hold resolves, because
 // 400ms is long enough for a cutscene to start.
@@ -1606,6 +1748,8 @@ function yads_remote_ready(_rt) {
     if (game_paused()) { return false; }
     if (_rt.view != undefined) { return false; }
     if (_rt[$ "picker"] != undefined) { return false; }
+    if (_rt[$ "convert_ask"] != undefined) { return false; }
+    if (_rt[$ "convert"] != undefined) { return false; }
 
     var _state = obj_ari.fsm.current_state_id();
     return (_state == PlayerState.Default || _state == PlayerState.MountDefault);
@@ -1846,6 +1990,13 @@ function yads_picker_choose(_rt, _picker) {
 // node, a non-undefined return replaces the engine's whole interact() for it,
 // and undefined defers (seams.toml:125-129).
 //
+// SINCE BETA 1.3 THIS FUNCTION ALSO LOOKS AT NODES THE MOD DOES NOT OWN, which
+// it never used to. The converter gesture (section 6c) turns a placed VANILLA
+// chest into its twin, so the "not one of ours" bail can no longer be the end of
+// the function - it is now one more read, gated on the player holding one
+// specific item, and it still defers to the engine on every path that is not
+// exactly that gesture.
+//
 // We claim ALL THREE units, and on a LIVE network (one that contains a heart)
 // each of them does something different. Giving all three the same door - the
 // network view - leaves nothing to teach the player what a heart or a panel is
@@ -1903,16 +2054,110 @@ function yads_picker_choose(_rt, _picker) {
 // simply reports the items where they landed.
 //
 function yads_object_interact(_ctx) {
-    var _ids = yads_ids();
-
     // Cheapest possible test first: this hook is hot.
     var _object_id = _ctx[$ "object_id"];
     if (_object_id == undefined) { return undefined; }
 
-    var _is_heart = (_ids.heart != undefined && _object_id == _ids.heart);
-    var _is_block = (_ids.block != undefined && _object_id == _ids.block);
-    var _is_panel = (_ids.panel != undefined && _object_id == _ids.panel);
-    if (!(_is_heart || _is_block || _is_panel)) { return undefined; }
+    // THE OWNERSHIP TEST IS ONE ARRAY READ, and it has to stay one.
+    // object.interact fires at the head of interact(node) for EVERY grid object
+    // in the game (Interact.gml:90, before can_interact), so this line runs on
+    // every door, rock, sign, bed and NPC the player ever presses, and the answer
+    // is "not ours" almost every time. Three id compares was already the wrong
+    // shape for that; sixty-two would have been indefensible. Inlined rather than
+    // routed through yads_kind_at for the same reason yads_is_member inlines it,
+    // and bounds-guarded for the same reason too - a mod whose object keys sort
+    // after "netstor_*" mints ids past the end of our table, and one of its nodes
+    // reaching this line must read as "not ours", never fault.
+    var _kinds = yads_ids().kind;
+    var _mine = (_object_id >= 0 && _object_id < array_length(_kinds))
+        ? _kinds[_object_id] : undefined;
+
+    // NOT OURS - which used to be the end of it, and is now one more read.
+    //
+    // THE CONVERTER ARM IS THE ONLY REASON THIS FUNCTION EVER LOOKS AT A NODE
+    // THE MOD DOES NOT OWN, and it is gated on the player holding one specific
+    // item, so the cost added to every rock, door, sign, bed and NPC in the game
+    // is a held-item read that bails on the first compare. It has to be the
+    // SECOND test rather than the first: an ObjectId lookup is an array index and
+    // a held-item lookup walks two struct hops and an inventory slot.
+    //
+    // yads_convert_gesture returns undefined for everything it does not claim -
+    // no converter held, not a chest, no twin for this chest - so the ordinary
+    // press still reaches the engine having cost one extra array read.
+    //
+    // AND SINCE THE UPGRADE WAVE THERE ARE TWO OF THEM HERE, tried in order.
+    // They cannot both claim: yads_converter_slot wants the held item to BE
+    // netstor_converter, yads_upgrade_slot wants it to place one of the 59
+    // chests, and netstor_converter's fiddle entry names no `object` at all. So
+    // the order is a cost question and nothing else, and the cost is two
+    // held-slot reads on a press instead of one - which is human-rate, unlike the
+    // ownership array read above it, which is why that one is inlined and these
+    // are not.
+    if (_mine == undefined) {
+        // THE CONFIRM POPUP GUARD, HOISTED ONTO THIS ARM TOO, and it is a fix
+        // rather than a tidy-up. This arm RETURNS before the three surface
+        // guards below it, so until this line the vanilla-chest gestures were
+        // the only two in the mod that could fire with our own confirm popup
+        // already up - and yads_open_convert would then spawn a SECOND
+        // Menu.Popup and overwrite _rt.convert_ask, orphaning the first _ask
+        // (yads_menu_closed's reference compare then declines to clear it) and
+        // handing ANCHOR.get_menu two menus of one type, which is its "more
+        // than one was open" assert (Anchor.gml:154-174). The only thing
+        // holding that shut was [popup] pause = "main" keeping the FSM out of
+        // attempt_interact - somebody else's flag, which the guards below say
+        // in as many words that this mod refuses to rely on.
+        //
+        // DEFER RATHER THAN SWALLOW, which is where it differs from the three
+        // below, and the difference is blast radius. Those three sit past the
+        // ownership test, so they answer for OUR nodes only; this arm runs on
+        // every rock, door, sign, bed, crop and NPC in the game. Returning true
+        // here would swallow every interaction in the world for as long as the
+        // flag is up, and a convert_ask that ever failed to clear would brick
+        // the game rather than just this mod's menus. Deferring closes the hole
+        // exactly - the gestures below cannot run, so no second popup can be
+        // built - and hands a press we have no claim on back to the engine,
+        // which cannot act on it either while the popup pauses the world.
+        //
+        // Cost on the hot path: one struct read on a press, added to the two
+        // held-slot reads the two gestures below already pay. The ownership
+        // array read above it stays the only test on the truly hot line.
+        //
+        // Gate 0g carries the same test independently (network.gml, 0g), so a
+        // future caller of yads_convert_check that does not come through this
+        // ladder is covered too. Belt and braces, the way view and picker are.
+        if (yads_runtime()[$ "convert_ask"] != undefined) { return undefined; }
+
+        var _conv = yads_convert_gesture(_ctx);
+        if (_conv != undefined) { return _conv; }
+        return yads_upgrade_gesture(_ctx);
+    }
+
+    // Spelled back out into the three names the ladder below has always used.
+    // _is_block is now "is a CRATE" - netstor_block or any netstor_crate_* twin -
+    // and every branch that reads it wants exactly that: a crate is a crate
+    // whatever its sprite.
+    var _is_heart = (_mine == YADS_KIND_HEART);
+    var _is_block = (_mine == YADS_KIND_CRATE);
+    var _is_panel = (_mine == YADS_KIND_PANEL);
+
+    // A CONNECTOR HAS NO INTERACTION AT ALL, and this line is here because the
+    // ladder below ends in yads_open_view rather than in a refusal.
+    //
+    // It is unreachable, three times over. A rug prototype registers no
+    // interactable: every renderer.interact()/register_interactable() call inside
+    // create_furniture_renderer is gated on a prototype feature the connectors do
+    // not declare (Furniture.gml:991-1512), and the interaction system never
+    // consults the rug layer at all. So object.interact cannot fire with a
+    // connector's object_id in the first place.
+    //
+    // It is nevertheless CODE and not a comment, because "not heart, not crate,
+    // not panel" reads as "panel" all the way down this function: the three
+    // booleans above are exhaustive by assumption, `_is_panel` is never tested
+    // again, and a LINK falling past `if (_is_block)` would land on
+    // yads_open_view and open an aggregated storage window on a carpet. The kind
+    // vocabulary grew; the ladder's fall-through must not be the thing that
+    // notices.
+    if (_mine == YADS_KIND_LINK) { return undefined; }
 
     // No player instance means no ARI.inventory to pair against and no safe
     // ESC-drop target; hand it back to the engine rather than half-open.
@@ -1931,6 +2176,48 @@ function yads_object_interact(_ctx) {
     // someone else's flag.
     if (_rt.view != undefined) { return true; }
     if (_rt[$ "picker"] != undefined) { return true; }
+
+    // The confirm popup is the third surface of ours, and it joins the two above
+    // rather than being defended by somebody else's pause flag. Unreachable in
+    // practice for the same reason the picker's line is - [popup] declares
+    // pause = "main" (ui/menus/misc_menus.toml), so the FSM cannot reach
+    // attempt_interact while one is up - and kept because "no second surface
+    // while one of ours is up" is an invariant this mod keeps for itself.
+    //
+    // IT IS NO LONGER THE ONLY COPY OF THIS TEST. The "not one of ours" arm
+    // above returns before this line, so it carries its own (deferring rather
+    // than swallowing, for the reason written there), and gate 0g carries a
+    // third inside yads_convert_check. Three positions, one invariant: no
+    // gesture in this mod can run while a confirm popup of ours is registered.
+    if (_rt[$ "convert_ask"] != undefined) { return true; }
+
+    // THE DOWNGRADE GESTURE, and it goes ABOVE the scan rather than inside the
+    // crate arm below, for two reasons that both point the same way:
+    //
+    //   * a crate on a live network with a panel is SEALED, and the sealed toast
+    //     would otherwise win the press. Turning a crate back into a chest is
+    //     the one thing that must work on a crate you cannot open.
+    //   * it needs nothing the scan produces. Downgrading is a fact about one
+    //     node, not about the network it happens to be standing in, so paying for
+    //     a flood fill first would be paying for an answer nobody reads.
+    //
+    // Returns undefined unless a converter is held against a crate that has a
+    // source chest to go back to, which is what keeps every other press on a
+    // crate byte-for-byte the behaviour it had before.
+    //
+    // THE UPGRADE JOINS IT ON THE SAME LINE, for the same two reasons verbatim:
+    // a sealed crate must still be swappable, and neither gesture reads anything
+    // the scan produces. It is the only gesture in the mod dispatched from two
+    // arms of this ladder - the "not one of ours" arm above claims vanilla chests
+    // and this one claims crates - because it is the only one whose target may be
+    // either. Second here, behind the downgrade, and mutually exclusive with it
+    // on the held item for the reason given above.
+    if (_mine == YADS_KIND_CRATE) {
+        var _down = yads_downgrade_gesture(_ctx);
+        if (_down != undefined) { return _down; }
+        var _up = yads_upgrade_gesture(_ctx);
+        if (_up != undefined) { return _up; }
+    }
 
     var _scan = yads_scan(_ctx);
 
@@ -2110,6 +2397,504 @@ function yads_link_remote(_node) {
 }
 
 //
+// 6c. THE CONVERTER GESTURES
+//
+// Three gestures, one machine, arguments swapped:
+//
+//   converter held + interact on a placed VANILLA CHEST -> confirm -> that chest
+//     becomes netstor_crate_<its key>, contents intact, one converter spent.
+//   converter held + interact on a placed CRATE          -> confirm -> that crate
+//     becomes the chest it came from, contents intact, one converter spent.
+//   CHEST ITEM held + interact on either                 -> confirm -> the HELD
+//     chest's twin takes the footprint, contents intact, the old shell comes back
+//     as an item, one converter spent OUT OF THE BACKPACK and the held chest
+//     consumed. That third one is the UPGRADE, and everything specific to it is
+//     at the bottom of this section.
+//
+// The second one ships in the same wave as the first and that is a safety
+// decision rather than a feature: conversion is otherwise a one-way door at the
+// object level - Pick.gml:597-606 hands back the first item whose `object` names
+// the node, which for a crate is the crate's own item - and a one-way door is a
+// thing players do not try. With the downgrade in the box the popup can describe
+// what happens instead of warning about it.
+//
+// WHAT DEFERS, AND WHY DEFERRING IS THE WHOLE EXCLUSION MECHANISM. Every gesture
+// below returns `undefined` the moment a lookup fails, and object.interact's
+// contract is that undefined hands the press back to the engine untouched. So:
+//
+//   * converter held at a rock, a door, an NPC, a tree -> no twin, undefined
+//   * converter held at stable_storage_chest / turn_in_box / starter_shipping_box
+//     -> no twin exists for any of the three, so the table has no entry, so
+//     undefined and the chest opens normally. There is NO exclusion list in this
+//     mod. The three are excluded because the content wave declined to give them
+//     a twin, and that single decision is the only place it is written down.
+//   * converter held at another mod's chest -> no twin, undefined
+//   * converter held at netstor_block, a heart or a panel -> netstor_block is a
+//     CRATE whose key carries no netstor_crate_ prefix, so it has no downgrade
+//     target and defers; hearts and panels never reach the crate arm at all
+//   * anything else held, or nothing held, at any node -> undefined before a
+//     single lookup
+//
+// A REFUSAL IS NOT A DEFER. Once we know a twin exists and the player is holding
+// the tool, the press was aimed at us, and swallowing it with a toast is the only
+// answer that is not a lie. Those three cases (a chest on a table, a footprint
+// that does not match, a target that could not hold the contents) return true.
+//
+// THE ORDERING INVERTS FROM yads_link_remote, AND THAT IS THE ENTIRE CUSTODY
+// ARGUMENT FOR THIS SECTION. The link gesture is a TRANSFER, so it adds to the
+// destination and only then removes from the source: "briefly in two places" is
+// recoverable and "briefly in none" is not. These gestures are a DESTRUCTION -
+// the converter is consumed, not moved - so the order flips. The world change
+// happens FIRST and `slot.remove(1)` is the last statement in yads_convert_apply,
+// which means a throw anywhere in the machine NEVER COSTS THE PLAYER AN ITEM.
+// Consume-first would have eaten the item and left the chest untouched.
+//
+// "COSTS THE PLAYER NOTHING" IS NOT THE SAME AS "COSTS NOBODY ANYTHING", and the
+// upgrade is where the two part company. For convert and downgrade the footprint
+// node maps 1:1 onto itself, so an unfinished gesture leaves the world with the
+// same object count and at most an unspent converter - the mod's freebie. The
+// upgrade is a three-body swap (held chest in, old shell back out, twin
+// standing), and a throw after the world change but before the held chest is
+// spent leaves the player one chest UP rather than the mod one converter down.
+// The error direction is the same on both - over-refund, never loss - and the
+// magnitude is not. Counted statement by statement over yads_convert_apply's
+// consume block, and in the throw table in docs/converter-facts.md.
+//
+// NO clone() ANYWHERE HERE. clone() exists in yads_link_remote because one of
+// several remotes crosses an inventory boundary and an aliased LiveItem
+// fragments stacks. Nothing crosses a boundary here: the converter is destroyed,
+// the chest contents are captured out of a slot that is emptied in the same
+// statement (network.gml section 11, step 4), and the upgrade's returned shell is
+// a FRESH LiveItem minted from a prototype the way vanilla's own furniture pickup
+// mints one (Pick.gml:509-515), not a copy of anything that already exists.
+//
+
+// WHICH GESTURE A CONFIRM BELONGS TO. Carried on the ask, copied onto the
+// request, and read in exactly three places: the popup's two loc keys, the
+// completion toast, and the branch in yads_convert_apply that decides what is
+// spent. An integer rather than the bool it replaced because there are three of
+// them now, and free to renumber - nothing persists one.
+#macro YADS_MODE_CONVERT 0
+#macro YADS_MODE_DOWNGRADE 1
+#macro YADS_MODE_UPGRADE 2
+
+
+// The player's held slot, if what is in it is a Network Converter. Returns the
+// SLOT rather than a bool because the consume needs it, and it is the single
+// place "is the player holding a converter" is asked - the two gestures and the
+// spend all route through it, so the answer cannot drift between them.
+//
+// Shaped exactly like yads_link_remote's opening, and for the same reasons:
+// Inventory.slot goes through List.get, which ASSERTS rather than returning
+// undefined for an out-of-range index (List.gml:143-146), and a throw inside
+// object.interact is swallowed by mmapi_run_override (mmapi_hooks.gml:362-368) -
+// it would degrade silently to the engine's own chest UI with no log line the
+// player can see. The animal test is the one vanilla's chest Throw predicate
+// makes before the same kind of hand-off (Furniture.gml:1257-1258): carrying an
+// animal is its own held state and a gesture that ignores it is a gesture that
+// fires while the player is doing something else.
+//
+// An undefined converter_item means the item did not install (a partial content
+// set), and then NOTHING is a converter and every gesture below defers - the
+// same fail-open yads_is_remote takes.
+function yads_converter_slot() {
+    var _wanted = yads_ids().converter_item;
+    if (_wanted == undefined) { return undefined; }
+    if (!instance_exists(obj_ari)) { return undefined; }
+
+    var _backpack = ARI.inventory;
+    var _index = ARI.held_item_index;
+    if (_index < 0 || _index >= _backpack.size()) { return undefined; }
+
+    var _slot = _backpack.slot(_index);
+    if (_slot.count <= 0 || _slot.item == undefined) { return undefined; }
+    if (_slot.item.item_id != _wanted) { return undefined; }
+    if (ARI.held_animal_id != undefined) { return undefined; }
+
+    return _slot;
+}
+
+// GESTURE A - a vanilla chest becomes its twin. Called from the "not one of
+// ours" bail at the head of yads_object_interact, so it runs on every rock and
+// door in the game and bails on the held-item read.
+function yads_convert_gesture(_node) {
+    if (yads_converter_slot() == undefined) { return undefined; }
+
+    // The twin table is the authority on what may be converted, and it is
+    // derived from UNIT_KEYS rather than from "does this node have an
+    // interaction_chest". Deriving it from the prototype would claim every
+    // chest-shaped node in every installed mod, and there would be no twin to
+    // write for any of them.
+    return yads_convert_claim(_node, yads_crate_for_chest(_node[$ "object_id"]),
+        YADS_MODE_CONVERT);
+}
+
+// GESTURE C - a crate becomes the chest it came from. Called from inside the
+// crate arm of the ladder, so the kind test has already passed.
+function yads_downgrade_gesture(_node) {
+    if (yads_converter_slot() == undefined) { return undefined; }
+
+    return yads_convert_claim(_node, yads_chest_for_crate(_node[$ "object_id"]),
+        YADS_MODE_DOWNGRADE);
+}
+
+// Shared tail: run every gate, then either ask or explain. Returns undefined to
+// defer, true to swallow the press.
+function yads_convert_claim(_node, _target, _mode) {
+    if (_target == undefined) { return undefined; }
+
+    var _verdict = yads_convert_check(_node, _target);
+    if (_verdict == YADS_CONVERT_DEFER) { return undefined; }
+    if (_verdict != YADS_CONVERT_OK) {
+        yads_convert_toast(_verdict, _mode);
+        return true;
+    }
+
+    // Same as the two other interact-driven surfaces in this mod: stop Ari
+    // mid-stride before a menu takes the screen.
+    obj_ari.set_idle_simple();
+    yads_open_convert(_node, _target, _mode);
+    return true;
+}
+
+// One refusal, one string. Split rather than merged because a refusal with a fix
+// the player can act on has to say so, and folding it into a general "cannot be
+// converted" would hide that. BLOCKED (step out of the footprint) is the case
+// that established the rule; FOOTPRINT (hold a chest of the same size) and
+// NO_ROOM (hold a bigger chest) are the two the upgrade adds to it, and both are
+// upgrade-only in practice - convert and downgrade write a twin that copies its
+// source's size and inventory_size, so neither verdict is reachable for them, and
+// both fold back onto the general string there rather than shipping a fourth
+// wording nobody will ever see.
+//
+// Everything else - a chest on a table, a surface of ours already up, and a
+// post-confirm DEFER that could only come from the world changing under the
+// popup - lands on the general string, because none of them tells the player
+// anything to do.
+function yads_convert_toast(_verdict, _mode) {
+    var _up = (_mode == YADS_MODE_UPGRADE);
+    if (_verdict == YADS_CONVERT_BLOCKED) {
+        create_notification(YADS_LOCAL_ROOT + "convert_blocked", 60 * 3);
+        return;
+    }
+    if (_verdict == YADS_CONVERT_NO_ROOM) {
+        create_notification(YADS_LOCAL_ROOT
+            + (_up ? "upgrade_no_room" : "convert_no_room"), 60 * 3);
+        return;
+    }
+    if (_verdict == YADS_CONVERT_FOOTPRINT && _up) {
+        create_notification(YADS_LOCAL_ROOT + "upgrade_footprint", 60 * 3);
+        return;
+    }
+    create_notification(YADS_LOCAL_ROOT + "convert_refused", 60 * 3);
+}
+
+//
+// GESTURE U - THE UPGRADE. Hold a vanilla chest ITEM, press on a placed chest or
+// a placed crate, and the footprint ends up carrying the held chest's twin with
+// everything that was inside still inside. The old shell comes back as an item,
+// so shells are CONSERVED and the converter is the only thing this mod ever truly
+// consumes.
+//
+// IT CLAIMS BOTH TARGET KINDS, which is what makes it the only gesture in the
+// mod that is dispatched from two arms of the ladder - the "not one of ours" arm
+// for a vanilla chest, and the crate arm beside the downgrade. It is second in
+// both, behind the converter gesture that has always been there, and the order
+// costs nothing to reason about because the two are MUTUALLY EXCLUSIVE ON THE
+// HELD ITEM: netstor_converter has no `object` in its fiddle entry, so it can
+// never resolve a twin, and a chest item is never the converter's ItemId. A press
+// can be at most one of these gestures.
+//
+// THE DEFER LIST IS THE PAIR TABLES AGAIN, and it is longer than the converter's
+// because there are two lookups to miss instead of one:
+//
+//   * held item that places nothing, or places something with no twin (a bed, a
+//     table, another mod's chest, the three excluded fixtures' items) -> the
+//     to_crate read misses, undefined, vanilla gets the press
+//   * nothing held, an animal held, a held index off the end of the backpack, no
+//     obj_ari -> same, and before any table read
+//   * target with no shell - a rock, a door, an NPC, netstor_block, a heart, a
+//     panel, another mod's chest, the three excluded fixtures -> the shell lookup
+//     misses, undefined
+//   * a shell whose object no chest ITEM places -> undefined. Unreachable on the
+//     shipped content set: all 59 sources were audited and each has exactly one
+//     item prototype naming it. Kept because "we cannot give the shell back" is
+//     the one condition under which this gesture must not run at all.
+//
+// AND THREE REFUSALS OF ITS OWN, on top of every gate the machine already keeps.
+// Once the tables have answered, the press was aimed at us and a silent defer
+// would be a lie:
+//
+//   * SAME SHELL - the held chest is the one already standing here. Tested
+//     first, because it is true regardless of what is in the backpack and
+//     because it costs one table read rather than a scan of it.
+//   * NO CONVERTER IN THE BACKPACK. Not the held slot - the held slot has the
+//     chest in it - so this is the one question in the mod that walks the
+//     player's inventory rather than indexing into it.
+//   * everything yads_convert_check says no to, with FOOTPRINT and NO_ROOM
+//     finally reaching a player.
+//
+function yads_upgrade_gesture(_node) {
+    // The held chest, and the twin it would write. First because it is the read
+    // that bails for every press in the game that is not this gesture.
+    var _slot = yads_upgrade_slot(undefined);
+    if (_slot == undefined) { return undefined; }
+    var _target = yads_twin_for_item(_slot.item);
+
+    // What comes back. A crate hands back its SOURCE chest's item, a paired
+    // vanilla chest hands back its own, and anything else has no shell and is
+    // not ours to touch.
+    var _shell_object = yads_shell_object(_node[$ "object_id"]);
+    if (_shell_object == undefined) { return undefined; }
+    if (find_item_prototype(_shell_object) == undefined) { return undefined; }
+
+    // THE POINTLESS SWAP. Asked of the TABLES rather than of the two item ids,
+    // which is the same question one hop earlier and costs no scan: if the
+    // shell's own twin is the twin we are about to write, the held chest and the
+    // shell are the same chest. Then the whole gesture is the plain conversion
+    // with an extra chest changing hands for nothing, and saying so is kinder
+    // than performing it.
+    if (yads_crate_for_chest(_shell_object) == _target) {
+        create_notification(YADS_LOCAL_ROOT + "upgrade_same", 60 * 3);
+        return true;
+    }
+
+    // THE TOOL, FROM THE BACKPACK. Refusing rather than deferring is the same
+    // call the rest of this section makes: two chests and a target the tables
+    // know is an aimed press, and opening the chest instead would leave the
+    // player wondering why the swap did nothing.
+    if (yads_converter_stock() == undefined) {
+        create_notification(YADS_LOCAL_ROOT + "upgrade_no_tool", 60 * 3);
+        return true;
+    }
+
+    return yads_convert_claim(_node, _target, YADS_MODE_UPGRADE);
+}
+
+// The player's HELD slot, if what is in it is an item that places one of the 59
+// convertible source chests - and, when _target is given, that one specifically.
+//
+// Two callers, two needs, one function, so "the chest we are charging for" cannot
+// be asked two ways: the gesture passes undefined and reads the twin off the
+// answer, and yads_convert_apply passes the target it is about to write and gets
+// undefined unless the very same chest is still in hand.
+//
+// Shaped exactly like yads_converter_slot, and for its reasons: Inventory.slot
+// goes through List.get, which ASSERTS rather than returning undefined for an
+// out-of-range index (List.gml:143-146), and a throw inside object.interact is
+// swallowed by mmapi_run_override (mmapi_hooks.gml:362-368). The animal test is
+// the one vanilla's chest Throw predicate makes before the same kind of hand-off
+// (Furniture.gml:1257-1258).
+function yads_upgrade_slot(_target) {
+    if (!instance_exists(obj_ari)) { return undefined; }
+
+    var _backpack = ARI.inventory;
+    var _index = ARI.held_item_index;
+    if (_index < 0 || _index >= _backpack.size()) { return undefined; }
+
+    var _slot = _backpack.slot(_index);
+    if (_slot.count <= 0 || _slot.item == undefined) { return undefined; }
+    if (ARI.held_animal_id != undefined) { return undefined; }
+
+    var _twin = yads_twin_for_item(_slot.item);
+    if (_twin == undefined) { return undefined; }
+    if (_target != undefined && _twin != _target) { return undefined; }
+
+    return _slot;
+}
+
+// The first backpack slot holding a Network Converter, or undefined.
+//
+// THE ONLY WALK OF THE PLAYER'S INVENTORY IN THIS MOD, and it exists because the
+// upgrade's tool is not the thing in the player's hand - the chest is - so
+// yads_converter_slot cannot answer for it. 30-odd slots, once per upgrade press
+// and once per confirm, on a path that has already proved two table lookups; the
+// hot ownership test at the head of yads_object_interact never reaches here.
+//
+// FIRST MATCH, NOT BEST MATCH: converters carry no variant that could make one
+// slot's stack different from another's, so "a converter" is the whole question.
+//
+// An undefined converter_item means the item did not install (a partial content
+// set), and then nothing is a converter and the upgrade refuses - which is the
+// honest answer, since without the tool the gesture has no cost to charge.
+function yads_converter_stock() {
+    var _wanted = yads_ids().converter_item;
+    if (_wanted == undefined) { return undefined; }
+    if (!instance_exists(obj_ari)) { return undefined; }
+
+    var _backpack = ARI.inventory;
+    var _size = _backpack.size();
+    for (var _i = 0; _i < _size; _i++) {
+        var _slot = _backpack.slot(_i);
+        if (_slot.count <= 0 || _slot.item == undefined) { continue; }
+        if (_slot.item.item_id == _wanted) { return _slot; }
+    }
+    return undefined;
+}
+
+// THE CONFIRM, PERFORMED. Runs from the tick, one frame after the popup's Yes
+// button recorded the request, and it is the only caller of yads_replace_node.
+//
+// THE REQUEST IS CONSUMED ON ITS FIRST FRAME, unconditionally and before
+// anything else: one confirm is one attempt, and a request that survived a
+// failure would be a request that retries a grid mutation every frame forever.
+//
+// NOTHING REMEMBERED IS TRUSTED. A frame of wall clock passed and the popup that
+// raised this closed in it, so the node struct is re-resolved from its own grid
+// cell and its object_id is re-compared before a single field is read off it. A
+// detached node struct handed to erase_object_node_by_parent would trip the
+// engine's own "we tried to erase X but we're a different Y" assert
+// (GridUtils.gml:376) against whatever moved in - which is the one way this
+// feature could damage a node it was never pointed at.
+function yads_convert_apply(_rt) {
+    var _request = _rt.convert_do;
+    _rt.convert_do = undefined;
+    if (_request == undefined) { return; }
+
+    // THE ASK HAS BEEN ANSWERED, so the registration goes with the request, in
+    // the same statement and for the same reason: both describe a popup that is
+    // already gone. THIS LINE IS LOAD-BEARING FOR GATE 0g, which now refuses
+    // while convert_ask is live, and the frame walk is the whole argument:
+    //
+    //   frame C, inside ANCHOR.on_begin_step: the free-requested drain
+    //     (Anchor.gml:262-271) runs FIRST and finds nothing - the popup is still
+    //     open. Then the node walk reaches button #2, the deferred tap fires,
+    //     and create_button's wrapper (PopupMenu.gml:74-79) calls close() before
+    //     the callback. close() only sets close_requested / free_requested and
+    //     calls on_close (AnchorMenu.gml:187-231) - IT DOES NOT FREE, so
+    //     ui.menu_closed does NOT fire and yads_menu_closed does NOT run. Then
+    //     the callback sets convert_do. End of frame C: request pending,
+    //     convert_ask STILL REGISTERED.
+    //   frame D: mmapi_run_installs() is the first statement of Game.step_begin,
+    //     ahead of TICK++ and therefore ahead of CHAINS/ANCHOR.on_begin_step
+    //     (Game.gml:570-582). So THIS function runs while convert_ask is still
+    //     set, and a gate 0g reading it without this clear would refuse the very
+    //     confirm the popup was raised to collect - every time, for every
+    //     gesture. Later in frame D ANCHOR's drain finally frees the popup and
+    //     emits ui.menu_closed; yads_menu_closed's reference compare finds
+    //     convert_ask already undefined, declines, and leaks nothing.
+    //
+    // Unconditional rather than reference-compared because there is nothing to
+    // compare against: yads_tap_convert_confirm records a COPY of the ask, not
+    // the ask, and one popup at a time is the invariant the three guards keep.
+    _rt.convert_ask = undefined;
+
+    if (!instance_exists(obj_ari)) { return; }
+
+    var _node = _request.node;
+    if (_node == undefined) { return; }
+
+    // Liveness, in three questions: is it still attached to a grid, is it still
+    // the node that grid has at that cell, and is it still the same object.
+    var _grid = _node[$ "parent_grid"];
+    if (_grid == undefined) { return; }
+    var _ni = _grid.try_node_index_for_cell(_node.top_left_x, _node.top_left_y);
+    if (_ni == undefined) { return; }
+    if (_grid.node_parent[_ni] != _node) { return; }
+    if (_node[$ "object_id"] != _request.source) { return; }
+
+    var _up = (_request.mode == YADS_MODE_UPGRADE);
+
+    // PROVE EVERY COST IS STILL PAYABLE before the world changes. Unreachable
+    // while the popup is up - it declares pause = "main" and mutes every InputId
+    // (PopupMenu.gml:301-309) - but the gate is what makes "one converter, one
+    // conversion" a property of the code rather than of the pause flag.
+    //
+    // The upgrade has TWO costs and both are proved here: the chest still in
+    // hand (and still the one whose twin this request names, which is what the
+    // _target argument asks), and a converter still somewhere in the backpack.
+    var _held = _up ? yads_upgrade_slot(_request.target) : yads_converter_slot();
+    if (_held == undefined) { return; }
+    if (_up && yads_converter_stock() == undefined) { return; }
+
+    // Re-gate. yads_convert_check is pure, and this is the call that counts: the
+    // one the gesture made was a frame ago and was there to keep the player from
+    // being asked to confirm something that would then refuse.
+    var _verdict = yads_convert_check(_node, _request.target);
+    if (_verdict != YADS_CONVERT_OK) {
+        yads_convert_toast(_verdict, _request.mode);
+        return;
+    }
+
+    // THE SWAP PAYLOAD, DERIVED FROM THE LIVE WORLD and not from the popup's
+    // memory - the same rule the liveness ladder above follows. The shell comes
+    // off the node standing at the footprint, whose object_id was just proved
+    // equal to _request.source; the infusion comes off the item in the hand right
+    // now. Undefined for the two converter gestures, which have no shell to
+    // return and carry the node's own infusion across.
+    var _swap = undefined;
+    if (_up) {
+        var _shell_object = yads_shell_object(_node.object_id);
+        if (_shell_object == undefined) { return; }
+        var _shell_proto = find_item_prototype(_shell_object);
+        if (_shell_proto == undefined) { return; }
+        _swap = {
+            shell: _shell_proto.item_id,
+            infusion: try_infusion_to_string(_held.item.infusion),
+        };
+    }
+
+    // The world change. It raises its own toast on the rollback path, so a false
+    // here is already explained.
+    if (!yads_replace_node(_node, _request.target, _swap)) { return; }
+
+    // AND THE COSTS LAST, IN THE ORDER THAT DECIDES WHO PAYS FOR A THROW. From
+    // here on every remaining statement only takes something away, and each one
+    // is RE-RESOLVED at the instant it is spent - the convert gesture's own idiom
+    // - so the removal lands on a slot that still holds what it is being charged
+    // for. remove(1) rather than drain(), so a player carrying three spends one
+    // (drain also has an inverted argument test, Inventory.gml:410-411).
+    //
+    // THE HELD CHEST FIRST, THE CONVERTER LAST. A throw between the two costs THE
+    // MOD A FREEBIE AND NEVER THE PLAYER AN ITEM: the swap has happened, the old
+    // shell is already back in their hands, the held chest is spent, and they
+    // keep a converter they should have spent. Count it and it nets to zero -
+    // n held chest-items plus one standing shell before, (n-1) held plus one
+    // returned shell item plus one standing twin after. Reversing the pair would
+    // let a throw eat the tool while the chest it was meant to spend is still in
+    // hand, which is the consume-first mistake this section's header rejects for
+    // the plain conversion.
+    //
+    // ONE STATEMENT EARLIER IS A DIFFERENT SIGN, and earlier waves of this
+    // comment got it wrong. A throw between yads_replace_node returning true and
+    // _chest.remove(1) below MINTS A CHEST rather than costing the mod one:
+    // n held plus one standing shell = n+1 chest objects before, n held plus one
+    // returned shell item plus one standing twin = n+2 after. The twin is a real
+    // object - one converter downgrades it back into a chest - so that is a
+    // genuine +1, not a bookkeeping artefact.
+    //
+    // THE FRAMING THAT IS RIGHT FOR CONVERT AND DOWNGRADE IS WRONG HERE, and
+    // that is the whole lesson: those two are a 1:1 footprint swap (twin(S)
+    // replaces S, nothing is returned) so the only thing a throw can leave
+    // unspent is the converter. The upgrade is a THREE-BODY swap - held chest in,
+    // old shell out, twin standing - and the same consume-last ordering that
+    // makes the two-body case cost the mod a freebie makes the three-body case
+    // pay the player one. Both are safe in the same direction (over-refund, never
+    // loss) and only one of them is free.
+    //
+    // Not reachable: it needs a throw inside yads_upgrade_slot below, which is
+    // four struct reads and one _backpack.slot(_index) on an index the same
+    // function bounds-tested two lines earlier. Written down because the throw
+    // table in docs/converter-facts.md is a claim, and this row of it was false
+    // in the duplication direction.
+    if (_up) {
+        var _chest = yads_upgrade_slot(_request.target);
+        if (_chest != undefined) { _chest.remove(1); }
+    }
+
+    var _spend = _up ? yads_converter_stock() : yads_converter_slot();
+    if (_spend != undefined) { _spend.remove(1); }
+
+    if (_up) {
+        create_notification(YADS_LOCAL_ROOT + "upgrade_done", 60 * 3);
+        return;
+    }
+    create_notification(YADS_LOCAL_ROOT
+        + ((_request.mode == YADS_MODE_DOWNGRADE)
+            ? "downgrade_done" : "convert_done"), 60 * 3);
+}
+
+//
 // 7. CLOSE / SAVE / LOAD
 //
 // ui.menu_closed carries { menu, kind } and kind is Menu.Storage for every
@@ -2145,6 +2930,32 @@ function yads_menu_closed(_ctx) {
         return;
     }
 
+    // The converter's confirm popup, released the same way and for the same
+    // reason: _rt.convert_ask is a guard the interact ladder reads, and a guard
+    // that is never cleared is a mod that never opens another menu.
+    //
+    // RELEASING IS ALL THERE IS TO DO, and in particular the pending request is
+    // NOT cancelled here. create_button's tap wrapper closes the popup BEFORE it
+    // runs the callback (PopupMenu.gml:74-79), so on a Yes this event fires with
+    // convert_do either about to be set or just set - clearing it here would eat
+    // every confirm. The request is single-shot by construction instead: the tick
+    // consumes it on its first frame.
+    //
+    // ON A YES THIS IS THE SECOND CLEAR AND IT DOES NOTHING, which is by design
+    // and not a redundancy to tidy away. close() only requests a free, so this
+    // event does not fire until ANCHOR's next begin-step drain (Anchor.gml:
+    // 262-271) - and our tick runs ahead of ANCHOR in that same frame, so
+    // yads_convert_apply has already cleared convert_ask by then, deliberately,
+    // because gate 0g refuses while it is live. The reference compare below is
+    // what makes the double clear a no-op rather than a way to wipe a newer
+    // popup's registration. On a No or an ESC there is no executor, and this is
+    // the only clear there is.
+    var _ask = _menu[$ "netstor_convert"];
+    if (_ask != undefined) {
+        if (_rt[$ "convert_ask"] == _ask) { _rt.convert_ask = undefined; }
+        return;
+    }
+
     if (_rt.view == undefined) { return; }
     if (_menu[$ "netstor_view"] == undefined) { return; }
 
@@ -2176,7 +2987,42 @@ function yads_game_saving(_ctx) {
     //    It also leaves the state re-derivable: the entries keep their bases and
     //    their counts, only `held` is cleared, so the next poll finds nothing to
     //    do and the next swing continues the sequence where it left off.
+    //
+    //    THE SAME COUPLING AS THE TICK'S, AND HERE IT IS SHARPER. Being first
+    //    puts step 0b's escrow flush below this call inside one function body, so
+    //    a throw in here skips it - and mmapi_emit catches per handler
+    //    (mmapi_hooks.gml:253-257) rather than aborting the save, so save_game
+    //    carries straight on and COMMITS. That is the one path on which a live
+    //    escrow becomes real, permanent item loss: the escrow is a plain struct
+    //    on global.__yads, this mod registers no modsave sidecar, and the save
+    //    that lands is a world whose chest was emptied by a swap that never
+    //    finished. The tick's ordering has the same shape (see the head of
+    //    yads_tick) and a softer landing, because nothing is written to disk.
+    //
+    //    Accepted for the same reason and with the same trade: the failure this
+    //    call prevents is a welded-shut crate serialized into the player's save,
+    //    which is unrecoverable, while the escrow it gates on is a two-frame
+    //    window that only opens after a throw has already happened. Do not
+    //    reorder the pair to "fix" this - state it.
     yads_pick_flush(_rt);
+
+    // 0b. FLUSH THE CONVERT ESCROW, and it is second for the same reason the
+    //     sweeper is second in the tick: the pick restore must precede
+    //     everything, and this must precede everything else.
+    //
+    //     The escrow is a plain array on global.__yads and this mod registers no
+    //     modsave sidecar (section 2), so items sitting in it while the grids
+    //     serialize would simply cease to exist - not dropped, not in
+    //     lost_items, gone. One call, and it is the same recover the tick runs:
+    //     put the contents back into the unit if there is still a unit, and into
+    //     the player's hands if there is not.
+    //
+    //     Normally a single struct read. It only has work to do in the two-frame
+    //     window a throw inside the machine can open, and a save raised inside
+    //     that window is precisely the case with no other way back.
+    if (_rt[$ "convert"] != undefined) {
+        yads_convert_recover(_rt);
+    }
 
     var _view = _rt.view;
     if (_view == undefined) { return; }
@@ -2206,6 +3052,25 @@ function yads_game_loaded(_ctx) {
     _rt.recipes_done = undefined;   // backfill again for the save being loaded
     _rt.view = undefined;           // no menu survives a load
     _rt.picker = undefined;         // nor does the picker popup
+
+    // Nor does the converter's confirm popup, and nor does a confirm that was
+    // recorded against the world being replaced: convert_do names a node struct
+    // belonging to a grid that is about to be discarded, and the first tick of
+    // the new save would re-resolve it against somebody else's farm.
+    _rt.convert_ask = undefined;
+    _rt.convert_do = undefined;
+
+    // THE ESCROW IS DROPPED, NOT RECOVERED, and that is the honest answer rather
+    // than the tidy one. This hook fires at the START of a load, before GRIDS is
+    // rebuilt and with ARI about to be replaced, so there is nowhere to put the
+    // items that will still exist in a second. What is being dropped belongs to
+    // the outgoing save and has already left its chest.
+    //
+    // Unreachable in practice, which is why a drop is acceptable: an escrow only
+    // outlives the statement that made it if that statement threw, the sweeper
+    // closes it on the very next tick, and starting a load takes more than a
+    // frame of menu.
+    _rt.convert = undefined;
 
     // A press held over from the save being replaced. The tick would otherwise
     // act on it against the new world: the hotkey poll has no room or load test

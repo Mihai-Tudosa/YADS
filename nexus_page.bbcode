@@ -1,7 +1,7 @@
 [center][size=6][b]YADS - Yet Another Digital Storage Mod[/b][/size]
 [size=3][i]Network storage for Fields of Mistria. One search bar for every crate you own.[/i][/size]
 
-[b]Beta 1.2[/b] by mykay · requires the [url=https://www.nexusmods.com/fieldsofmistria/mods/78]Mods of Mistria Installer[/url] 0.15.1+[/center]
+[b]Beta 1.3[/b] by mykay · requires the [url=https://www.nexusmods.com/fieldsofmistria/mods/78]Mods of Mistria Installer[/url] 0.15.1+[/center]
 
 [line]
 
@@ -16,11 +16,39 @@ If you've played modded Minecraft or Terraria you already know the idea. This is
 [*][b]Storage Block[/b] (30 Wood, 1 Copper Ingot). 30 slots each. Chain as many as you want.
 [*][b]Access Panel[/b] (1 Copper Ingot, 1 Glass). The terminal. Open it to browse the network.
 [*][b]Remote Access Panel[/b] (5 Ruby, 5 Sapphire, 5 Copper Ingot, 5 Iron Ingot, 1 Access Panel). Browse from anywhere.
+[*][b]Network Converter[/b] (1 Copper Ingot, 1 Glass). Turns a placed chest into a crate, or a crate back into a chest.
 [/list]
 
-Crafted at the Woodcrafting Station, under "Chests & Storage" and their own "Digital Storage" category.
+The first three are crafted at the Woodcrafting Station, under "Chests & Storage" and their own "Digital Storage" category. The Converter and the Remote craft under "Digital Storage" only: neither is a chest, so neither can be placed.
 
-Place units so they touch and they link up. Connected units glow (blocks tint green, yellow or red by how full they are), a disconnected one shows a sad face. Each room is its own network, so the farm and the farmhouse each need their own Heart. Don't place units on tables.
+Place units so they touch and they link up. Connected units glow (blocks and crates tint green, yellow or red by how full they are), a disconnected one shows a sad face. Each room is its own network, so the farm and the farmhouse each need their own Heart. Don't place units on tables.
+
+[size=5][b]Turn your chests into network storage[/b][/size]
+
+Every convertible vanilla chest, 59 of them across every family (basic wood in all its colors, deluxe, royal, stone, coral, icebox, fridge, mist, void, obsidian, miners, dragon, the festival flower chest, even the mimic), can join your network as a crate: same exact look, same exact capacity, 30, 42 or 54 slots depending on the chest. A crate glows with the network's colors and shows the sad face when disconnected, just like a Storage Block. The mist chest floats, so its glow shows on the shadow pad beneath it instead of on the chest itself. Crates have no crafting recipe of their own, converting a chest is the only way to get one.
+
+The Network Converter does the converting. Hold it and interact with a placed chest to wire it into the network, contents stay right where they are. Interact with a crate instead and it turns back into the plain chest it was, contents intact again. One converter spent, either direction.
+
+[b]Upgrading is a gesture, not a rebuild.[/b] Hold a chest item and interact with any placed chest or crate: the target becomes that held chest's crate, your items carry over, and the old shell pops straight back into your backpack as an item. It costs the chest you're holding plus one converter, and it's refused with a clear message if your items wouldn't fit the new size. Craft or buy a bigger chest, hold it, tap your crate, that's the whole upgrade. The price is whatever the vanilla chest economy already charges for that tier: a deluxe crate costs you a deluxe chest, same as it always did.
+
+[size=5][b]Wire it all together[/b][/size]
+
+Four floor pieces carry the network between units that are too far apart to touch. Lay them in a path and everything they touch, standing on them or right beside them, joins the same network. They chain to each other too, so a carpet path can run clear across the farm.
+
+[list]
+[*][b]Magic Carpet[/b] (3 Fiber)
+[*][b]Magic Tile[/b] (3 Stone)
+[*][b]Bundle of Cables[/b] (2 Wood, 1 Copper Ore)
+[*][b]Cloud Connector[/b] (1 Glass, 2 Fiber)
+[/list]
+
+All four are walkable, no hitbox, and you can place a chest or a crate right on top of one. They craft at Woodcrafting level 1, under "Digital Storage" only, and glow cyan once they're carrying a live network.
+
+They're shape-aware, too. A straight run draws as one continuous line, not a row of repeated tiles: corners bend, junctions branch, and the path runs right up into the crates it feeds. The carpet only shows its fringe on open edges, the cables bundle into a real pipe with clamps, the cloud stretches into one long bank. A freshly placed piece can take a second to settle into its shape while the network catches up.
+
+One tip: the Cloud Connector floats above the ground and has no line at ground level, so a run that mixes it with the others shows a gap where it sits. The network is still whole there, the cloud just runs its own way.
+
+Three small things to know: building over a connector with a blueprint or farm expansion removes it without dropping the item, so re-route before you build. A connector fully covered by a chest can't be picked up until the chest moves. And connectors can't share a cell with a decorative rug, it's one rug layer per cell.
 
 [size=5][b]Remote access[/b][/size]
 
@@ -37,6 +65,7 @@ Place units so they touch and they link up. Connected units glow (blocks tint gr
 [*]The vanilla storage UI over every connected unit at once. Withdraw and deposit exactly like a chest.
 [*]A real search box: full text editing, an X to clear it, Ctrl+arrows jump whole words. Auto-focus toggle so it's ready when the panel opens.
 [*]14 category filters, plus a "Museum needs" lens for what the museum still wants.
+[*]227 items now sort under the right filter: wood is out of Fishing, wallpapers and floorings show up under their filter again, cooked seafood is out of Fish, and more.
 [*]Value badges per stack or per item. Big numbers abbreviate, like 12.3k.
 [*]Five sort modes. Your pick is remembered.
 [*]Quick-stack your backpack into the network with one button.
@@ -48,7 +77,7 @@ Place units so they touch and they link up. Connected units glow (blocks tint gr
 [list]
 [*]You can squeeze between crates: solid core, walkable edges.
 [*]A unit that still holds items takes five pickaxe swings to break. Empty ones break in one.
-[*]Blocks with no heart behave as plain chests, so your items are never locked away.
+[*]Blocks and crates with no heart behave as plain chests, so your items are never locked away.
 [*]If a deposit doesn't fit, the rest comes straight back with a toast. Nothing is silently eaten.
 [/list]
 

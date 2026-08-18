@@ -136,6 +136,43 @@ def build_corpus(dirs):
     return words, fn_defs
 
 
+DIR_MACRO = re.compile(r"#macro\s+YADS_DIR_([NWES])\s+(\d+)")
+LINKS_BITS = re.compile(
+    r"^\s*N,\s*W,\s*E,\s*S\s*=\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)", re.M)
+
+
+def check_dir_bits(mod_dir):
+    """The autotile bit order lives in two files with no shared source: the
+    YADS_DIR_* macros in network.gml drive the runtime mask, and N/W/E/S in
+    links.py drive which frame the generator draws each arm into. Both copy
+    the engine's fence order (Furniture.gml:2193) by hand. A divergence ships
+    plausible-looking but WRONG art in asymmetric layouts, and no other gate
+    can see it — audit_autotile_body anchors its probes to links.py's own
+    constants, so it catches a drawer/constant flip, never a cross-file one.
+    Returns a list of problem strings; empty when the mod has no macros."""
+    macros = {}
+    for path in gml_files(mod_dir):
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for m in DIR_MACRO.finditer(fh.read()):
+                macros[m.group(1)] = int(m.group(2))
+    if not macros:
+        return []
+    links_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "links.py")
+    if not os.path.isfile(links_path):
+        return ["YADS_DIR_* macros present but links.py is not beside this script"]
+    with open(links_path, encoding="utf-8") as fh:
+        m = LINKS_BITS.search(fh.read())
+    if not m:
+        return ["links.py: the `N, W, E, S = ...` bit assignment was not found"]
+    art = dict(zip("NWES", (int(g) for g in m.groups())))
+    return [
+        "bit-order divergence: network.gml YADS_DIR_%s = %s but links.py %s = %s"
+        % (d, macros.get(d), d, art[d])
+        for d in "NWES" if macros.get(d) != art[d]
+    ]
+
+
 def analyze_mod(mod_dir):
     calls, globals_used, defined, locals_seen = {}, {}, set(), set()
     for path in gml_files(mod_dir):
@@ -223,9 +260,17 @@ def main():
               " corpus (if it is a host builtin, the game bricks at boot; rename it):")
         for name in shadows:
             print(f"  {name}")
+    bit_problems = check_dir_bits(mod_dir)
+    if bit_problems:
+        failed = True
+        print(f"\nAUTOTILE BIT-ORDER ({len(bit_problems)}) — network.gml and links.py disagree"
+              " (wrong-but-plausible art in asymmetric layouts):")
+        for p in bit_problems:
+            print(f"  {p}")
     if failed:
         sys.exit(1)
-    print("OK: every referenced symbol exists; no export collisions; no shadowing candidates.")
+    print("OK: every referenced symbol exists; no export collisions; no shadowing"
+          " candidates; autotile bit order agrees across files.")
 
 
 if __name__ == "__main__":

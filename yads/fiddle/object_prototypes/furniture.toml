@@ -95,7 +95,7 @@
 # margins) blocks removal the same silent way.
 #
 # Vanilla agrees, and the numbers are exact (counted over the shipped
-# assets/fiddle/object_prototypes/furniture.toml, 1490 tables): the field is
+# assets/fiddle/object_prototypes/furniture.toml, 1503 tables): the field is
 # mentioned by FIVE tables in the whole game — `[default] = false` and the four
 # walkable terrain bridges `farm_bridge` / `gemstone_bridge_v1..v3` = true, all
 # of them 16-wide, `on_twos_only`, no inventory. All 62 prototypes that carry an
@@ -169,3 +169,1078 @@
 		opening_sprite = "spr_furniture_netstor_panel_opening"
 		bounce_sprite = "spr_furniture_netstor_panel_bounce"
 		inventory_size = 4
+
+# --- THE FOUR CONNECTORS (Beta 1.3) ------------------------------------------
+#
+# netstor_link_carpet / netstor_link_tile / netstor_link_cables / netstor_link_cloud.
+# Hand-authored units, like heart/block/panel above -- NOT generated twins, and
+# not touched by make_fiddle.py. Rug-layer prototypes, not chests: no
+# inventory, no interaction, no collision. Shape copied verbatim from
+# vanilla's smallest rug, `void_flagstone_small_v1`
+# (fiddle/object_prototypes/furniture.toml:14132-14140 in the game corpus):
+# size [2, 2], depth_to_floor = true, collision_grid = "0", rug = true. All
+# 144 vanilla rugs agree on this shape unanimously (measured).
+#
+# collision_grid = "0" IS AN ASSERT-SATISFIER ONLY, never an applied hitbox.
+# create_furniture_prototype requires every cell of a rug's collision_grid to
+# read 0 (Furniture.gml:550-561, the array default when the key is absent is
+# a grid FLOODED WITH 1 -- GridUtils.gml:533-534 -- so the key must be present
+# and zero), but write_furniture_to_location never writes rug collision at
+# all: a rug cell writes ONLY node_rug_id/node_rug_parent
+# (Furniture.gml:668-675), full stop. There is no hitbox here to reason about,
+# in either direction, and therefore no exposure to the load-order near-miss
+# this file's header describes for the units -- Furniture.gml:1966 skips the
+# Ari collision test unconditionally for any prototype with rug = true.
+#
+# NO interaction_chest (a connector holds nothing -- it never enters
+# STORAGE_NODES, which is gated on `node.inventory != undefined`,
+# Furniture.gml:869-874). NO child_grid (moot for a rug regardless: the
+# child-grid descent is gated on `proto.rug == false` at both
+# Furniture.gml:592-609 and the placement preview's :1640, so a connector can
+# never land on or open a tabletop). NO check_pick (see this file's header for
+# why it was reverted for the units; a connector has no inventory to guard, so
+# it needs no removal protection of any kind -- yads_pick_target declines a
+# rug-only cell outright and hands the swing straight to vanilla,
+# network.gml:2836-2853). NO footstep (an object picked up off a connector's
+# footprint would silently strip it, GridUtils.gml:377-379 -- see H12).
+#
+# top_sprite is the CONNECTED-state glow overlay, wired like every other unit
+# in this file. Three of the four use top_sprite_depth_offset = 1; the Cloud
+# uses 2, because its BODY lives in the overlay 12px above a ground shadow and
+# needs the extra depth step to stay in front of a unit on the row behind it.
+# The float itself lives in the art's pivot values; the depth offset is the
+# one prototype field where the Cloud differs.
+#
+# BUT THE FLAT THREE'S OVERLAY DEPTH IS NOT DECIDED HERE ANY MORE, and this
+# field is no longer the thing to reach for if their glow draws wrong.
+# top_sprite_depth_offset is an offset from ORDINARY Y-SORT
+# (Furniture.gml:952), which for a rug is the wrong band entirely: a carpet's
+# glow y-sorted against a crate standing on that carpet paints over the crate's
+# face, which is exactly what it did through Beta 1.3. yads_glow_apply now pins
+# the carpet's, the tile's and the cable bundle's overlay to get_floor_depth()
+# - 1 every frame -- above their own body, below every actor. The 1 below is
+# what those three wear only in the fraction of a second before the glow cache
+# first reaches them, and there is no prototype spelling of "floor band" to
+# replace it with. The Cloud's 2 is still live and still load-bearing: it is
+# the one of the four that is meant to y-sort.
+#
+# A connector and a decorative rug cannot share a cell -- one rug layer, one
+# occupant per cell (GridUtils.gml:71-75). A connector laid under a placed
+# unit, and a unit standing on top of a connector, are both allowed
+# (GridUtils.gml:76-82).
+
+[netstor_link_carpet]
+	size = [2, 2]
+	depth_to_floor = true
+	collision_grid = "0"
+	rug = true
+
+	[netstor_link_carpet.south]
+		sprite = "spr_furniture_netstor_link_carpet"
+		top_sprite = "spr_furniture_netstor_link_carpet_glow"
+		top_sprite_depth_offset = 1
+
+[netstor_link_tile]
+	size = [2, 2]
+	depth_to_floor = true
+	collision_grid = "0"
+	rug = true
+
+	[netstor_link_tile.south]
+		sprite = "spr_furniture_netstor_link_tile"
+		top_sprite = "spr_furniture_netstor_link_tile_glow"
+		top_sprite_depth_offset = 1
+
+[netstor_link_cables]
+	size = [2, 2]
+	depth_to_floor = true
+	collision_grid = "0"
+	rug = true
+
+	[netstor_link_cables.south]
+		sprite = "spr_furniture_netstor_link_cables"
+		top_sprite = "spr_furniture_netstor_link_cables_glow"
+		top_sprite_depth_offset = 1
+
+[netstor_link_cloud]
+	size = [2, 2]
+	depth_to_floor = true
+	collision_grid = "0"
+	rug = true
+
+	[netstor_link_cloud.south]
+		sprite = "spr_furniture_netstor_link_cloud"
+		top_sprite = "spr_furniture_netstor_link_cloud_glow"
+		# 2, not the other units' 1: the cloud's BODY lives in the overlay, drawn
+		# 12px above a ground-level shadow base. The extra depth step keeps the
+		# floating body in front of a unit standing on the row behind it.
+		top_sprite_depth_offset = 2
+
+# ==== BEGIN GENERATED CRATE TWINS -- make_fiddle.py -- DO NOT EDIT BY HAND ====
+#
+# 59 chest twins -- one per player-placeable vanilla chest.  GENERATED by
+# make_fiddle.py from crates/_geom.py; edit that pipeline, never these lines.
+#
+# EVERY KEY BELOW IS FROZEN THE MOMENT IT SHIPS, for the reason at the top of
+# this file: Grid.gml:1075-1082 drops a saved node whose object_id string no
+# longer resolves, WITH ITS WHOLE INVENTORY.  So is every inventory_size --
+# Grid.gml:1139-1145 force-resizes a loaded chest to the CURRENT prototype size
+# and Inventory.gml:49-52 pops the trailing slots UNDRAINED, so lowering one
+# silently deletes the tail of every save that used it.
+#
+# THE BODY IS THE VANILLA CHEST'S OWN SPRITE, named by string: a mod prototype
+# may name a vanilla asset (Furniture.gml:216).  That is why there is no body
+# art in this mod for any of the 59, and why each twin inherits vanilla's
+# poly_ collision shape, its shadow_manifest entry, its item icon and that
+# icon's outlines.json entry for free.  The network identity is entirely the
+# per-FAMILY top_sprite glow overlay, which crates/fam_<family>.py draws.
+#
+# NO collision_grid EXCEPT WHERE THE SOURCE CHEST HAD ONE.  The netstor set's
+# squeeze-between margins are deliberately NOT extended here: a twin must
+# behave like the chest it replaces, "0110" is meaningless on the two 3-wide
+# families, and a walkable margin is the only thing that makes the load-order
+# near-miss in docs/safety-invariants.md reachable.  The two cottage fridges
+# ship collision_grid = "2" (whole-footprint, can_jump_over = false,
+# GridUtils.gml:535-536 + :580-585) and their twins copy it.
+#
+# NO destructable, NO child_grid, NO rule_grid, NO placeable_locations: all
+# four are inherited from the game's [default] furniture table, which is what
+# the source chests do.  A narrower placeable_locations would be a crate the
+# player can never pick up (Pick.gml:452); a child_grid would void the
+# five-swing removal guard outright (see the header of this file).
+#
+
+# ---- basic_wood (15) -- spr_furniture_netstor_crate_basic_wood_glow -- inv 30 -- footprint 4x2
+
+[netstor_crate_basic_wood_chest_black]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_black.south]
+		sprite = "spr_furniture_basic_chest_v05_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_black.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v05_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v05_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v05_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_blue]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_blue.south]
+		sprite = "spr_furniture_basic_chest_v12_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_blue.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v12_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v12_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v12_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_cottage]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_cottage.south]
+		sprite = "spr_furniture_basic_chest_v06_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_cottage.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v06_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v06_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v06_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_dark]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_dark.south]
+		sprite = "spr_furniture_basic_chest_v01_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_dark.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v01_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v01_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v01_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_green]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_green.south]
+		sprite = "spr_furniture_basic_chest_v11_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_green.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v11_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v11_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v11_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_haunted_attic]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_haunted_attic.south]
+		sprite = "spr_furniture_basic_chest_v07_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_haunted_attic.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v07_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v07_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v07_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_light]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_light.south]
+		sprite = "spr_furniture_basic_chest_v02_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_light.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v02_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v02_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v02_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_medium]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_medium.south]
+		sprite = "spr_furniture_basic_chest_v03_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_medium.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v03_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v03_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v03_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_orange]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_orange.south]
+		sprite = "spr_furniture_basic_chest_v09_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_orange.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v09_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v09_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v09_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_pink]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_pink.south]
+		sprite = "spr_furniture_basic_chest_v14_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_pink.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v14_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v14_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v14_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_purple]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_purple.south]
+		sprite = "spr_furniture_basic_chest_v13_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_purple.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v13_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v13_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v13_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_red]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_red.south]
+		sprite = "spr_furniture_basic_chest_v08_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_red.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v08_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v08_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v08_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_white]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_white.south]
+		sprite = "spr_furniture_basic_chest_v15_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_white.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v15_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v15_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v15_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_witch_queen]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_witch_queen.south]
+		sprite = "spr_furniture_basic_chest_v04_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_witch_queen.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v04_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v04_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v04_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_basic_wood_chest_yellow]
+	size = [4, 2]
+
+	[netstor_crate_basic_wood_chest_yellow.south]
+		sprite = "spr_furniture_basic_chest_v10_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_basic_wood_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_basic_wood_chest_yellow.interaction_chest]
+		open_sprite = "spr_furniture_basic_chest_v10_spring_opened"
+		opening_sprite = "spr_furniture_basic_chest_v10_spring_opening"
+		bounce_sprite = "spr_furniture_basic_chest_v10_spring_bounce"
+		inventory_size = 30
+
+# ---- coral (2) -- spr_furniture_netstor_crate_coral_glow -- inv 42 -- footprint 4x2
+
+[netstor_crate_coral_storage_chest_blue]
+	size = [4, 2]
+
+	[netstor_crate_coral_storage_chest_blue.south]
+		sprite = "spr_furniture_tide_coral_storage_chest_blue_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_coral_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_coral_storage_chest_blue.interaction_chest]
+		open_sprite = "spr_furniture_tide_coral_storage_chest_blue_spring_opened"
+		opening_sprite = "spr_furniture_tide_coral_storage_chest_blue_spring_opening"
+		bounce_sprite = "spr_furniture_tide_coral_storage_chest_blue_spring_bounce"
+		inventory_size = 42
+
+[netstor_crate_coral_storage_chest_purple]
+	size = [4, 2]
+
+	[netstor_crate_coral_storage_chest_purple.south]
+		sprite = "spr_furniture_tide_coral_storage_chest_purple_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_coral_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_coral_storage_chest_purple.interaction_chest]
+		open_sprite = "spr_furniture_tide_coral_storage_chest_purple_spring_opened"
+		opening_sprite = "spr_furniture_tide_coral_storage_chest_purple_spring_opening"
+		bounce_sprite = "spr_furniture_tide_coral_storage_chest_purple_spring_bounce"
+		inventory_size = 42
+
+# ---- deluxe (13) -- spr_furniture_netstor_crate_deluxe_glow -- inv 54 -- footprint 4x2
+
+[netstor_crate_deluxe_storage_chest_aqua]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_aqua.south]
+		sprite = "spr_furniture_deluxe_storage_chest_aqua_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_aqua.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_aqua_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_aqua_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_aqua_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_black]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_black.south]
+		sprite = "spr_furniture_deluxe_storage_chest_black_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_black.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_black_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_black_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_black_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_blue]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_blue.south]
+		sprite = "spr_furniture_deluxe_storage_chest_blue_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_blue.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_blue_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_blue_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_blue_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_dark_brown]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_dark_brown.south]
+		sprite = "spr_furniture_deluxe_storage_chest_dark_brown_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_dark_brown.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_dark_brown_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_dark_brown_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_dark_brown_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_gold]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_gold.south]
+		sprite = "spr_furniture_deluxe_storage_chest_gold_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_gold.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_gold_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_gold_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_gold_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_gray]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_gray.south]
+		sprite = "spr_furniture_deluxe_storage_chest_gray_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_gray.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_gray_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_gray_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_gray_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_green]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_green.south]
+		sprite = "spr_furniture_deluxe_storage_chest_green_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_green.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_green_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_green_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_green_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_light_brown]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_light_brown.south]
+		sprite = "spr_furniture_deluxe_storage_chest_light_brown_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_light_brown.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_light_brown_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_light_brown_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_light_brown_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_orange]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_orange.south]
+		sprite = "spr_furniture_deluxe_storage_chest_orange_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_orange.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_orange_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_orange_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_orange_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_pink]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_pink.south]
+		sprite = "spr_furniture_deluxe_storage_chest_pink_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_pink.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_pink_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_pink_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_pink_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_purple]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_purple.south]
+		sprite = "spr_furniture_deluxe_storage_chest_purple_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_purple.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_purple_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_purple_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_purple_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_red]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_red.south]
+		sprite = "spr_furniture_deluxe_storage_chest_red_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_red.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_red_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_red_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_red_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_deluxe_storage_chest_white]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_storage_chest_white.south]
+		sprite = "spr_furniture_deluxe_storage_chest_white_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_deluxe_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_storage_chest_white.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_storage_chest_white_main_opened"
+		opening_sprite = "spr_furniture_deluxe_storage_chest_white_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_storage_chest_white_main_bounce"
+		inventory_size = 54
+
+# ---- dragon (1) -- spr_furniture_netstor_crate_dragon_glow -- inv 54 -- footprint 4x2
+
+[netstor_crate_dragon_chest]
+	size = [4, 2]
+
+	[netstor_crate_dragon_chest.south]
+		sprite = "spr_decor_dragon_chest_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_dragon_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_dragon_chest.interaction_chest]
+		open_sprite = "spr_decor_dragon_chest_spring_opened"
+		opening_sprite = "spr_decor_dragon_chest_spring_opening"
+		bounce_sprite = "spr_decor_dragon_chest_spring_bounce"
+		inventory_size = 54
+
+# ---- flower (1) -- spr_furniture_netstor_crate_flower_glow -- inv 42 -- footprint 4x2
+
+[netstor_crate_spring_festival_flower_chest]
+	size = [4, 2]
+
+	[netstor_crate_spring_festival_flower_chest.south]
+		sprite = "spr_decor_spring_festival_flower_chest_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_flower_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_spring_festival_flower_chest.interaction_chest]
+		open_sprite = "spr_decor_spring_festival_flower_chest_spring_opened"
+		opening_sprite = "spr_decor_spring_festival_flower_chest_spring_opening"
+		bounce_sprite = "spr_decor_spring_festival_flower_chest_spring_bounce"
+		inventory_size = 42
+
+# ---- fridge (2) -- spr_furniture_netstor_crate_fridge_glow -- inv 42 -- footprint 3x2
+#      carries bark_offset from the source chest
+#      collision_grid 2 copied from the source chest
+
+[netstor_crate_cottage_fridge_v1]
+	size = [3, 2]
+	collision_grid = "2"
+
+	[netstor_crate_cottage_fridge_v1.south]
+		sprite = "spr_furniture_cottage_fridge_v1_main_closed"
+		offset = [12, 13]
+		top_sprite = "spr_furniture_netstor_crate_fridge_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_cottage_fridge_v1.interaction_chest]
+		open_sprite = "spr_furniture_cottage_fridge_v1_main_opened"
+		opening_sprite = "spr_furniture_cottage_fridge_v1_main_opening"
+		bounce_sprite = "spr_furniture_cottage_fridge_v1_main_bounce"
+		inventory_size = 42
+		bark_offset = [0, -41]
+
+[netstor_crate_cottage_fridge_v2]
+	size = [3, 2]
+	collision_grid = "2"
+
+	[netstor_crate_cottage_fridge_v2.south]
+		sprite = "spr_furniture_cottage_fridge_v2_main_closed"
+		offset = [12, 13]
+		top_sprite = "spr_furniture_netstor_crate_fridge_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_cottage_fridge_v2.interaction_chest]
+		open_sprite = "spr_furniture_cottage_fridge_v2_main_opened"
+		opening_sprite = "spr_furniture_cottage_fridge_v2_main_opening"
+		bounce_sprite = "spr_furniture_cottage_fridge_v2_main_bounce"
+		inventory_size = 42
+		bark_offset = [0, -41]
+
+# ---- icebox (5) -- spr_furniture_netstor_crate_icebox_glow -- inv 54 -- footprint 4x2
+#      carries bark_offset from the source chest
+
+[netstor_crate_deluxe_icebox_blue]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_icebox_blue.south]
+		sprite = "spr_furniture_deluxe_icebox_blue_main_closed"
+		offset = [16, 13]
+		top_sprite = "spr_furniture_netstor_crate_icebox_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_icebox_blue.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_icebox_blue_main_opened"
+		opening_sprite = "spr_furniture_deluxe_icebox_blue_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_icebox_blue_main_bounce"
+		inventory_size = 54
+		bark_offset = [0, -41]
+
+[netstor_crate_deluxe_icebox_green]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_icebox_green.south]
+		sprite = "spr_furniture_deluxe_icebox_green_main_closed"
+		offset = [16, 13]
+		top_sprite = "spr_furniture_netstor_crate_icebox_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_icebox_green.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_icebox_green_main_opened"
+		opening_sprite = "spr_furniture_deluxe_icebox_green_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_icebox_green_main_bounce"
+		inventory_size = 54
+		bark_offset = [0, -41]
+
+[netstor_crate_deluxe_icebox_pink]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_icebox_pink.south]
+		sprite = "spr_furniture_deluxe_icebox_pink_main_closed"
+		offset = [16, 13]
+		top_sprite = "spr_furniture_netstor_crate_icebox_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_icebox_pink.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_icebox_pink_main_opened"
+		opening_sprite = "spr_furniture_deluxe_icebox_pink_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_icebox_pink_main_bounce"
+		inventory_size = 54
+		bark_offset = [0, -41]
+
+[netstor_crate_deluxe_icebox_white]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_icebox_white.south]
+		sprite = "spr_furniture_deluxe_icebox_white_main_closed"
+		offset = [16, 13]
+		top_sprite = "spr_furniture_netstor_crate_icebox_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_icebox_white.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_icebox_white_main_opened"
+		opening_sprite = "spr_furniture_deluxe_icebox_white_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_icebox_white_main_bounce"
+		inventory_size = 54
+		bark_offset = [0, -41]
+
+[netstor_crate_deluxe_icebox_yellow]
+	size = [4, 2]
+
+	[netstor_crate_deluxe_icebox_yellow.south]
+		sprite = "spr_furniture_deluxe_icebox_yellow_main_closed"
+		offset = [16, 13]
+		top_sprite = "spr_furniture_netstor_crate_icebox_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_deluxe_icebox_yellow.interaction_chest]
+		open_sprite = "spr_furniture_deluxe_icebox_yellow_main_opened"
+		opening_sprite = "spr_furniture_deluxe_icebox_yellow_main_opening"
+		bounce_sprite = "spr_furniture_deluxe_icebox_yellow_main_bounce"
+		inventory_size = 54
+		bark_offset = [0, -41]
+
+# ---- mimic (1) -- spr_furniture_netstor_crate_mimic_glow -- inv 54 -- footprint 4x2
+
+[netstor_crate_mimic_storage_chest]
+	size = [4, 2]
+
+	[netstor_crate_mimic_storage_chest.south]
+		sprite = "spr_furniture_mimic_storage_chest_main_closed"
+		offset = [16, 7]
+		top_sprite = "spr_furniture_netstor_crate_mimic_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_mimic_storage_chest.interaction_chest]
+		open_sprite = "spr_furniture_mimic_storage_chest_main_opened"
+		opening_sprite = "spr_furniture_mimic_storage_chest_main_opening"
+		bounce_sprite = "spr_furniture_mimic_storage_chest_main_bounce"
+		inventory_size = 54
+
+# ---- miners (2) -- spr_furniture_netstor_crate_miners_glow -- inv 30 -- footprint 4x2
+
+[netstor_crate_miners_crate_chest_v1]
+	size = [4, 2]
+
+	[netstor_crate_miners_crate_chest_v1.south]
+		sprite = "spr_furniture_mineshaft_miners_chest_v1_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_miners_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_miners_crate_chest_v1.interaction_chest]
+		open_sprite = "spr_furniture_mineshaft_miners_chest_v1_spring_opened"
+		opening_sprite = "spr_furniture_mineshaft_miners_chest_v1_spring_opening"
+		bounce_sprite = "spr_furniture_mineshaft_miners_chest_v1_spring_bounce"
+		inventory_size = 30
+
+[netstor_crate_miners_crate_chest_v2]
+	size = [4, 2]
+
+	[netstor_crate_miners_crate_chest_v2.south]
+		sprite = "spr_furniture_mineshaft_miners_chest_v2_spring_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_miners_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_miners_crate_chest_v2.interaction_chest]
+		open_sprite = "spr_furniture_mineshaft_miners_chest_v2_spring_opened"
+		opening_sprite = "spr_furniture_mineshaft_miners_chest_v2_spring_opening"
+		bounce_sprite = "spr_furniture_mineshaft_miners_chest_v2_spring_bounce"
+		inventory_size = 30
+
+# ---- mist (4) -- spr_furniture_netstor_crate_mist_glow -- inv 54 -- footprint 4x2
+#      carries close_sfx, open_sfx from the source chest
+
+[netstor_crate_mist_storage_chest_v1]
+	size = [4, 2]
+
+	[netstor_crate_mist_storage_chest_v1.south]
+		sprite = "spr_furniture_mist_storage_chest_v1_main_closed"
+		offset = [16, 10]
+		top_sprite = "spr_furniture_netstor_crate_mist_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_mist_storage_chest_v1.interaction_chest]
+		open_sprite = "spr_furniture_mist_storage_chest_v1_main_opened"
+		opening_sprite = "spr_furniture_mist_storage_chest_v1_main_opening"
+		bounce_sprite = "spr_furniture_mist_storage_chest_v1_main_bounce"
+		inventory_size = 54
+		close_sfx = "SoundEffects/Objects/MistChestClose"
+		open_sfx = "SoundEffects/Objects/MistChestOpen"
+
+[netstor_crate_mist_storage_chest_v2]
+	size = [4, 2]
+
+	[netstor_crate_mist_storage_chest_v2.south]
+		sprite = "spr_furniture_mist_storage_chest_v2_main_closed"
+		offset = [16, 10]
+		top_sprite = "spr_furniture_netstor_crate_mist_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_mist_storage_chest_v2.interaction_chest]
+		open_sprite = "spr_furniture_mist_storage_chest_v2_main_opened"
+		opening_sprite = "spr_furniture_mist_storage_chest_v2_main_opening"
+		bounce_sprite = "spr_furniture_mist_storage_chest_v2_main_bounce"
+		inventory_size = 54
+		close_sfx = "SoundEffects/Objects/MistChestClose"
+		open_sfx = "SoundEffects/Objects/MistChestOpen"
+
+[netstor_crate_mist_storage_chest_v3]
+	size = [4, 2]
+
+	[netstor_crate_mist_storage_chest_v3.south]
+		sprite = "spr_furniture_mist_storage_chest_v3_main_closed"
+		offset = [16, 10]
+		top_sprite = "spr_furniture_netstor_crate_mist_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_mist_storage_chest_v3.interaction_chest]
+		open_sprite = "spr_furniture_mist_storage_chest_v3_main_opened"
+		opening_sprite = "spr_furniture_mist_storage_chest_v3_main_opening"
+		bounce_sprite = "spr_furniture_mist_storage_chest_v3_main_bounce"
+		inventory_size = 54
+		close_sfx = "SoundEffects/Objects/MistChestClose"
+		open_sfx = "SoundEffects/Objects/MistChestOpen"
+
+[netstor_crate_mist_storage_chest_v4]
+	size = [4, 2]
+
+	[netstor_crate_mist_storage_chest_v4.south]
+		sprite = "spr_furniture_mist_storage_chest_v4_main_closed"
+		offset = [16, 10]
+		top_sprite = "spr_furniture_netstor_crate_mist_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_mist_storage_chest_v4.interaction_chest]
+		open_sprite = "spr_furniture_mist_storage_chest_v4_main_opened"
+		opening_sprite = "spr_furniture_mist_storage_chest_v4_main_opening"
+		bounce_sprite = "spr_furniture_mist_storage_chest_v4_main_bounce"
+		inventory_size = 54
+		close_sfx = "SoundEffects/Objects/MistChestClose"
+		open_sfx = "SoundEffects/Objects/MistChestOpen"
+
+# ---- obsidian (2) -- spr_furniture_netstor_crate_obsidian_glow -- inv 42 -- footprint 3x2
+
+[netstor_crate_lava_caves_obsidian_storage_chest_blue]
+	size = [3, 2]
+
+	[netstor_crate_lava_caves_obsidian_storage_chest_blue.south]
+		sprite = "spr_furniture_lava_caves_obsidian_storage_chest_blue_spring_closed"
+		offset = [12, 7]
+		top_sprite = "spr_furniture_netstor_crate_obsidian_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_lava_caves_obsidian_storage_chest_blue.interaction_chest]
+		open_sprite = "spr_furniture_lava_caves_obsidian_storage_chest_blue_spring_opened"
+		opening_sprite = "spr_furniture_lava_caves_obsidian_storage_chest_blue_spring_opening"
+		bounce_sprite = "spr_furniture_lava_caves_obsidian_storage_chest_blue_spring_bounce"
+		inventory_size = 42
+
+[netstor_crate_lava_caves_obsidian_storage_chest_purple]
+	size = [3, 2]
+
+	[netstor_crate_lava_caves_obsidian_storage_chest_purple.south]
+		sprite = "spr_furniture_lava_caves_obsidian_storage_chest_purple_spring_closed"
+		offset = [12, 7]
+		top_sprite = "spr_furniture_netstor_crate_obsidian_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_lava_caves_obsidian_storage_chest_purple.interaction_chest]
+		open_sprite = "spr_furniture_lava_caves_obsidian_storage_chest_purple_spring_opened"
+		opening_sprite = "spr_furniture_lava_caves_obsidian_storage_chest_purple_spring_opening"
+		bounce_sprite = "spr_furniture_lava_caves_obsidian_storage_chest_purple_spring_bounce"
+		inventory_size = 42
+
+# ---- royal (6) -- spr_furniture_netstor_crate_royal_glow -- inv 54 -- footprint 4x2
+
+[netstor_crate_royal_chest_blue]
+	size = [4, 2]
+
+	[netstor_crate_royal_chest_blue.south]
+		sprite = "spr_furniture_royal_chest_blue_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_royal_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_royal_chest_blue.interaction_chest]
+		open_sprite = "spr_furniture_royal_chest_blue_main_opened"
+		opening_sprite = "spr_furniture_royal_chest_blue_main_opening"
+		bounce_sprite = "spr_furniture_royal_chest_blue_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_royal_chest_dark_wood]
+	size = [4, 2]
+
+	[netstor_crate_royal_chest_dark_wood.south]
+		sprite = "spr_furniture_royal_chest_dark_wood_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_royal_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_royal_chest_dark_wood.interaction_chest]
+		open_sprite = "spr_furniture_royal_chest_dark_wood_main_opened"
+		opening_sprite = "spr_furniture_royal_chest_dark_wood_main_opening"
+		bounce_sprite = "spr_furniture_royal_chest_dark_wood_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_royal_chest_green]
+	size = [4, 2]
+
+	[netstor_crate_royal_chest_green.south]
+		sprite = "spr_furniture_royal_chest_green_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_royal_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_royal_chest_green.interaction_chest]
+		open_sprite = "spr_furniture_royal_chest_green_main_opened"
+		opening_sprite = "spr_furniture_royal_chest_green_main_opening"
+		bounce_sprite = "spr_furniture_royal_chest_green_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_royal_chest_purple]
+	size = [4, 2]
+
+	[netstor_crate_royal_chest_purple.south]
+		sprite = "spr_furniture_royal_chest_purple_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_royal_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_royal_chest_purple.interaction_chest]
+		open_sprite = "spr_furniture_royal_chest_purple_main_opened"
+		opening_sprite = "spr_furniture_royal_chest_purple_main_opening"
+		bounce_sprite = "spr_furniture_royal_chest_purple_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_royal_chest_red]
+	size = [4, 2]
+
+	[netstor_crate_royal_chest_red.south]
+		sprite = "spr_furniture_royal_chest_red_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_royal_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_royal_chest_red.interaction_chest]
+		open_sprite = "spr_furniture_royal_chest_red_main_opened"
+		opening_sprite = "spr_furniture_royal_chest_red_main_opening"
+		bounce_sprite = "spr_furniture_royal_chest_red_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_royal_chest_wood]
+	size = [4, 2]
+
+	[netstor_crate_royal_chest_wood.south]
+		sprite = "spr_furniture_royal_chest_wood_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_royal_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_royal_chest_wood.interaction_chest]
+		open_sprite = "spr_furniture_royal_chest_wood_main_opened"
+		opening_sprite = "spr_furniture_royal_chest_wood_main_opening"
+		bounce_sprite = "spr_furniture_royal_chest_wood_main_bounce"
+		inventory_size = 54
+
+# ---- stone (3) -- spr_furniture_netstor_crate_stone_glow -- inv 42 -- footprint 4x2
+
+[netstor_crate_stone_storage_chest_v1]
+	size = [4, 2]
+
+	[netstor_crate_stone_storage_chest_v1.south]
+		sprite = "spr_furniture_stone_storage_chest_spring_v1_closed"
+		offset = [16, 4]
+		top_sprite = "spr_furniture_netstor_crate_stone_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_stone_storage_chest_v1.interaction_chest]
+		open_sprite = "spr_furniture_stone_storage_chest_spring_v1_opened"
+		opening_sprite = "spr_furniture_stone_storage_chest_spring_v1_opening"
+		bounce_sprite = "spr_furniture_stone_storage_chest_spring_v1_bounce"
+		inventory_size = 42
+
+[netstor_crate_stone_storage_chest_v2]
+	size = [4, 2]
+
+	[netstor_crate_stone_storage_chest_v2.south]
+		sprite = "spr_furniture_stone_storage_chest_spring_v2_closed"
+		offset = [16, 4]
+		top_sprite = "spr_furniture_netstor_crate_stone_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_stone_storage_chest_v2.interaction_chest]
+		open_sprite = "spr_furniture_stone_storage_chest_spring_v2_opened"
+		opening_sprite = "spr_furniture_stone_storage_chest_spring_v2_opening"
+		bounce_sprite = "spr_furniture_stone_storage_chest_spring_v2_bounce"
+		inventory_size = 42
+
+[netstor_crate_stone_storage_chest_v3]
+	size = [4, 2]
+
+	[netstor_crate_stone_storage_chest_v3.south]
+		sprite = "spr_furniture_stone_storage_chest_spring_v3_closed"
+		offset = [16, 4]
+		top_sprite = "spr_furniture_netstor_crate_stone_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_stone_storage_chest_v3.interaction_chest]
+		open_sprite = "spr_furniture_stone_storage_chest_spring_v3_opened"
+		opening_sprite = "spr_furniture_stone_storage_chest_spring_v3_opening"
+		bounce_sprite = "spr_furniture_stone_storage_chest_spring_v3_bounce"
+		inventory_size = 42
+
+# ---- void (2) -- spr_furniture_netstor_crate_void_glow -- inv 54 -- footprint 4x2
+
+[netstor_crate_void_storage_chest_v1]
+	size = [4, 2]
+
+	[netstor_crate_void_storage_chest_v1.south]
+		sprite = "spr_furniture_void_chest_v1_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_void_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_void_storage_chest_v1.interaction_chest]
+		open_sprite = "spr_furniture_void_chest_v1_main_opened"
+		opening_sprite = "spr_furniture_void_chest_v1_main_opening"
+		bounce_sprite = "spr_furniture_void_chest_v1_main_bounce"
+		inventory_size = 54
+
+[netstor_crate_void_storage_chest_v2]
+	size = [4, 2]
+
+	[netstor_crate_void_storage_chest_v2.south]
+		sprite = "spr_furniture_void_chest_v2_main_closed"
+		offset = [16, 0]
+		top_sprite = "spr_furniture_netstor_crate_void_glow"
+		top_sprite_depth_offset = 1
+
+	[netstor_crate_void_storage_chest_v2.interaction_chest]
+		open_sprite = "spr_furniture_void_chest_v2_main_opened"
+		opening_sprite = "spr_furniture_void_chest_v2_main_opening"
+		bounce_sprite = "spr_furniture_void_chest_v2_main_bounce"
+		inventory_size = 54
+# ==== END GENERATED CRATE TWINS ---- make_fiddle.py -- DO NOT EDIT BY HAND ====

@@ -173,6 +173,129 @@ remote_no_deposit = "Link a remote by handing it to a Storage Heart."
 # placeholder, which is what lets it be a toast at all.
 remote_key_bad    = "Remote key not understood - using F6. Rebind it in the network picker."
 
+# --- The Network Converter (Beta 1.3) --------------------------------------
+# The converter's own name and description are NOT here: they live in
+# fiddle/items/furniture/netstor_set.toml, which the game's own
+# `"items/" = ["*/name", "*/description"]` localization entry already covers.
+#
+# TWO OF THESE TEN ARE POPUP KEYS AND EIGHT ARE TOASTS, and the split decides
+# what each may contain. convert_title / convert_body and their downgrade
+# siblings are handed to popup_creator, which resolves them through
+# PopupMenu.add_title/add_description -> TextNode.set_key -> local_get
+# (PopupMenu.gml:109-166) — a plain lookup, so they may not carry a
+# placeholder either. Everything else goes through create_notification, which
+# looks up whatever string it is handed (InfoToastsMenu.gml:31), so the same
+# no-digits rule the remote_* keys are written under applies unchanged.
+#
+# THE POPUP'S TWO BUTTONS NEED NO KEY OF OURS. PopupMenu.create_button
+# auto-glyphs exactly two buttons — #1 takes InputId.MenuBack, #2 takes
+# InputId.Interact (PopupMenu.gml:86-106) — and vanilla's own confirm popups
+# spell that pair "misc_local/no" then "misc_local/yes" (Interact.gml:643-644,
+# AriUtils.gml:631-632, AnimalUtils.gml:695-696). Those are translated vanilla
+# keys and reading misc_local is free; WRITING to it is forbidden.
+
+# The confirm popup, upgrade direction. "Networked" rather than "converted"
+# because the sentence has to answer the only question worth asking before
+# saying yes, which is what happens to what is inside.
+convert_title     = "Convert this chest?"
+convert_body      = "It becomes a networked crate and joins any storage network it touches. Everything inside it is kept, and a Network Converter can turn it back."
+# ...and the downgrade direction. Same shape, opposite sentence.
+downgrade_title   = "Restore this crate?"
+downgrade_body    = "It becomes an ordinary chest again and leaves the network. Everything inside it is kept."
+# Both directions succeeded. Worth a line even though the overlay changes in
+# the same frame: the glow is a small mark on a big sprite and a player who
+# just spent an item deserves to be told it worked.
+convert_done      = "Converted - this chest is on your network now."
+downgrade_done    = "Restored to an ordinary chest."
+# Refused BEFORE anything moved. Covers the three gates that can say no with a
+# twin in hand: a chest standing on a table (its grid is a child grid, which
+# never renders a node written into it), a footprint that does not match, and
+# a second conversion asked for while one is still in flight.
+convert_refused   = "This chest cannot be converted where it stands."
+# Refused before anything moved, by the engine's own placement test run against
+# the target prototype on the footprint the source is still standing on
+# (furniture_test_flag_mask with ignore_object). In practice that means a
+# creature inside the footprint rectangle (Furniture.gml:1966-1982), which is
+# the only input to it a player can change, so the string names the fix rather
+# than the mechanism.
+convert_blocked   = "Something is in the way - step clear of the chest and try again."
+# Refused before anything moved: the target holds fewer slots than this unit
+# has filled. Unreachable on the shipped content set - a twin copies its
+# source's inventory_size in both directions - and kept because the day that
+# stops being true, this string is the difference between a refusal and a
+# silently truncated inventory (Grid.gml:1139-1145, Inventory.gml:49-52).
+convert_no_room   = "That would not hold everything this one is carrying."
+# The world change was attempted and did not take, and the unit was put back
+# the way it was. No converter was spent: the item is removed only after the
+# replacement is standing.
+convert_failed    = "The conversion did not take - nothing was changed."
+# The escrow sweeper ran, which means a conversion was interrupted part-way
+# and could not be finished in place. The items are in the player's hands or
+# at their feet; this is the line that says why they appeared there. It now
+# also covers a returned SHELL with no stacks behind it - an interrupted
+# upgrade of an empty unit - which is why yads_convert_refund raises it from a
+# flag rather than from the stack loop.
+convert_recovered = "Conversion interrupted - your items were handed back."
+
+# --- The upgrade gesture (Beta 1.3) ----------------------------------------
+# Hold a vanilla chest ITEM, press on a placed chest or crate, and the held
+# chest's twin takes the footprint with the contents intact; the old shell
+# comes back as an item and one Network Converter is spent out of the backpack.
+# Seven keys: the popup pair, the completion line, and four refusals.
+#
+# SAME SPLIT AS ABOVE: upgrade_title / upgrade_body are POPUP keys, resolved
+# through PopupMenu.add_title/add_description -> TextNode.set_key -> local_get,
+# and the other five are TOASTS through create_notification
+# (InfoToastsMenu.gml:31). Neither kind may carry a placeholder, for the two
+# different reasons the converter block above spells out. The popup's two
+# buttons still need no key of ours.
+#
+# MEASURED against assets/fiddle/fonts/text_widths.toml, which is the right
+# table because popup_description names no eng font and therefore inherits
+# `standard` = fnt_mistria_birdseed (fiddle/ui/text_styles.toml:12-16).
+# Popup budget: title 150px on one line (the header interior), body reflowed at
+# 152px. Toast budget: the shipped ceiling is remote_key_bad at 367px.
+
+# The confirm popup. "Swap" rather than "convert" because the sentence has to
+# distinguish this from the plain conversion the same popup shape asks about,
+# and because two chests change places - which is the part a player needs to
+# have understood before saying yes.
+#
+# 103px, beside convert_title's 104 and downgrade_title's 104.
+upgrade_title     = "Swap in this chest?"
+# 811px of glyphs, six lines at 152px, i.e. a ~158px plate against the 240px
+# minspec GUI canvas - the same plate convert_body already ships (747px, also
+# six lines; the "4 lines" in the 1.3 comment was never re-measured and was
+# wrong). Names the converter explicitly: it is spent out of the BACKPACK here,
+# not out of the hand, so a player who is not told will not know it went.
+upgrade_body      = "The chest you are holding takes its place as a networked crate. Everything inside is kept, the old chest is handed back, and one Network Converter is used."
+# Done. "The old chest" is literally right for both target kinds - a crate
+# hands back its SOURCE chest's item - and "handed back" rather than "in your
+# pack" because a full backpack drops it at the player's feet instead
+# (Ari.gml:474-492). 217px.
+upgrade_done      = "Swapped - the old chest was handed back."
+# Refused before anything moved: no Network Converter anywhere in the backpack.
+# A refusal rather than a defer because two chests and a paired target is an
+# aimed press, and opening the chest instead would read as the swap silently
+# doing nothing. 310px.
+upgrade_no_tool   = "You need a Network Converter in your pack to swap chests."
+# Refused before anything moved: the held chest is the one already standing
+# here, so the swap would spend a chest and a converter to arrive where it
+# started. 210px.
+upgrade_same      = "That is already the chest standing here."
+# Refused before anything moved, by gate 0d. Reachable and ordinary here,
+# unlike for the converter: 4 of the 59 twins are [3,2] and the other 55 are
+# [4,2], so 440 of the 3,422 ordered pairs land on this string. Its own key
+# because convert_refused's "cannot be converted where it stands" would send
+# the player to move a chest that is standing exactly where it should. 289px.
+upgrade_footprint = "That chest is a different size - it will not fit this spot."
+# Refused before anything moved, by gate 0e: the held chest has fewer slots
+# than this unit has filled. The shipped content set carries three capacities
+# (54, 42 and 30), so unlike convert_no_room - which documents an invariant no
+# player can reach - this one is a doorway on the ordinary way through, and it
+# names the cause rather than the consequence. 346px.
+upgrade_no_room   = "The chest you are holding has fewer slots than this one has filled."
+
 # --- Value badge cycle button ----------------------------------------------
 # Bottom-bar toggle in the same family as autosearch_on/off above: the button
 # always shows (and its tooltip always describes) the CURRENT state, cycling

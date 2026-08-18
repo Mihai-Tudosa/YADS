@@ -3771,6 +3771,238 @@ function yads_status_bar(_row, _fraction) {
 }
 
 //
+// 6f. THE CONVERTER'S CONFIRM POPUP
+//
+// The smallest surface in this mod, and deliberately: a title, a sentence, and
+// the vanilla Cancel/Confirm pair. Everything about its layout is
+// popup_creator's default, so there is no geometry of ours to re-measure and no
+// second hover listener to reason about.
+//
+// THE TWO BUTTONS ARE FREE, INCLUDING THEIR GLYPHS AND THEIR STRINGS.
+// PopupMenu.create_button auto-glyphs and auto-positions EXACTLY two buttons:
+// #1 takes InputId.MenuBack, #2 takes InputId.Interact, and at #2 it pulls the
+// first 40px left and pushes the second 40px right (PopupMenu.gml:86-106). That
+// is a Cancel/Confirm pair with pad and keyboard bindings on both, for two
+// calls. The labels are vanilla's own translated misc_local/no and
+// misc_local/yes - reading misc_local is free, writing to it is forbidden - and
+// that exact pair is the corpus's own idiom for a two-button confirm
+// (Interact.gml:643-644, AriUtils.gml:631-632, AnimalUtils.gml:695-696).
+// THE MOD ADDS NO LOC KEY FOR EITHER BUTTON.
+//
+// THE INTERACT GLYPH ON #2 STAYS, unlike the picker's Rebind button, which
+// removes its own. There the glyph was wrong - it made E press "Rebind key" from
+// anywhere in the list. Here it is the point: Interact is the button the player
+// just pressed to raise this popup, and Interact confirming it is the vanilla
+// grammar for every yes/no in the game.
+//
+// ...AND IT DOES NOT DOUBLE-FIRE ON THE FRAME IT IS BORN. The press that opened
+// this popup was CONSUMED: par_interactable.attempt_interact registers chest
+// interactions with take_press = true (par_interactable.gml:23, :57-60), and
+// INPUT.take_press flips the raw status so the next read sees Off
+// (Input.gml:270-272). The glyph's think does not run this frame anyway - the
+// canvas is enabled by spawn(), which happens after ANCHOR.on_begin_step has
+// already walked the registrar for this frame - and on the NEXT frame the key is
+// held rather than pressed, and Pressed is an edge (Input.gml:421-430). The
+// journal's save popup is built from inside interact() in exactly this shape and
+// ships with the same pair.
+//
+// ONE FULL FRAME OF THE ANCHOR LOOP, walked in iteration order, because
+// docs/anchor-ui-facts.md says semantics-per-call is not enough and a prior UI
+// feature in this mod shipped completely dead for skipping it:
+//
+//   Anchor.on_begin_step walks node_registrar BACKWARDS, from node_count-1 down
+//   (Anchor.gml:362-370), so the LAST node registered is visited FIRST and the
+//   FIRST registered is visited LAST. Registration order here is: canvas (from
+//   ANCHOR.spawn_menu), backplate, header, title, body, body_text, button #1,
+//   button #2. So the walk is #2, #1, body_text, body, title, header, backplate,
+//   canvas.
+//
+//   HOVER LISTENERS IN THAT WALK: exactly two, buttons #1 and #2.
+//   set_tap_callback is what sets listens_for_hovers (Node.gml:519-520), and
+//   create_button is the only thing here that calls it. The title and body text
+//   nodes are ANCHOR.text with set_key and nothing else; the header, the body
+//   plate and the backplate are bare nine-slices; the canvas carries a think but
+//   set_think_callback sets run_logic and NOTHING else (Node.gml:540-550). So
+//   the "never overlap two hover listeners" rule has exactly one pair to check.
+//
+//   AND THE PAIR DOES NOT OVERLAP, by arithmetic rather than by eye. Both are
+//   Align.Center/Align.BottomIn at y = -10 (PopupMenu.gml:67-70) and sized
+//   max(60, width_for_text_container(label, 18)) (:64-66); auto_position then
+//   puts #1 at x -40 and #2 at x +40 (:91-97). A button of width W centred at
+//   +-40 spans 40 +- W/2, so the two touch only once W > 80, i.e. only once a
+//   label measures more than 62px. "Yes" and "No" are 3 and 2 glyphs in every
+//   locale that ships (rus "Да"/"Нет", jpn "はい"/"いいえ"), nowhere near it, so
+//   both sit at the 60px floor: #1 spans -70..-10, #2 spans +10..+70, 20px of
+//   dead plate between them. Nothing to steal, so no listen_for_hovers gate is
+//   needed and none is added.
+//
+//   THE FRAME, THEN, with the pointer over Confirm and the button going down:
+//     visit #2 - listens_for_hovers and unlocked; mouse_in_node and
+//       mouse_is_active, so !in_hover -> hover_node(#2). hover_node releases the
+//       previous holder first (Anchor.gml:1806) - which is #1 only if the
+//       pointer was on it a moment ago, and #1 is not mid-tap because the two do
+//       not overlap. in_hover = true, hover_outline enabled.
+//     still #2 - in_hover, mouse_in_node, so take_tap() takes the LeftMouse
+//       press (:405) and, because a mouse button is down this frame,
+//       tap_is_deferred = true rather than tapping now (:414-418). The tap fires
+//       on the RELEASE frame at :436-440.
+//     visit #1 - not hovered (the pointer is 20px away), so nothing.
+//     visit the four text/plate nodes - no listeners, no logic.
+//     visit the canvas LAST - runs PopupMenu's think, which calls
+//       run_exit_listening and then overrides every InputId (PopupMenu.gml:
+//       301-309). Being last is what lets the buttons above it read real input
+//       while the world below it reads none, and it is why obj_ari's FSM, which
+//       steps after ANCHOR, cannot act while this is up.
+//   Release frame: #2 is visited first again, tap_released() is true, the
+//     deferred tap runs -> yads_tap_convert_confirm records the request, then
+//     create_button's own wrapper has ALREADY closed the popup (:74-79 runs
+//     close() before the callback). Our tick performs the conversion next frame.
+//   On the pad: no hover at all. The pilot has #2 selected, the glyph think on
+//     #2 sees take_press(InputId.Interact) and calls ANCHOR.tap_node(#2)
+//     directly (Node.gml:1832-1839) - same callback, no hover involved, and the
+//     canvas's override runs after it for the same registration-order reason.
+//
+// THE UPGRADE CHANGED NOTHING IN THAT WALK, checked rather than assumed. It adds
+// a third pair of strings and a third value of `mode`; it adds no node, no
+// button, no callback, no glyph and no geometry. So the registrar still holds
+// canvas, backplate, header, title, body, body_text, #1, #2 in that order, the
+// hover-listener count is still exactly two, and both buttons still carry
+// misc_local labels of two or three glyphs and therefore still sit at the 60px
+// floor with 20px of dead plate between them. A longer BODY cannot move them:
+// the body plate is Align.Middle and the buttons are Align.BottomIn on a
+// backplate that grows downward, so they stay 10px off its bottom edge whatever
+// the plate's height. The one thing that could reopen the overlap question is a
+// third create_button call, and the upgrade makes none.
+//
+// AND THE MUTUAL EXCLUSION IS THE SAME THREE LAYERS ON BOTH ARMS - which is a
+// CORRECTION, because it was not true when this comment was first written and
+// the comment claimed it was. The parity claim then read "the vanilla-chest arm
+// reaches it with gate 0g's view / picker / live-escrow refusal behind it, no
+// weaker and no stronger". It was weaker, by exactly the guard that prevents a
+// second confirm popup: the ladder's `_mine == undefined` arm RETURNS before the
+// three surface guards, and gate 0g tested `convert` - the escrow - and not
+// `convert_ask`. A press on a vanilla chest with our own popup already up would
+// have spawned a second Menu.Popup, orphaned the first _ask and tripped
+// ANCHOR.get_menu's "more than one was open" assert (Anchor.gml:154-174). Not
+// item loss, and standing on nothing but [popup] pause = "main".
+//
+// Both holes are closed and the claim now holds as stated:
+//
+//   * the ladder's vanilla-chest arm carries its own convert_ask test, above
+//     both gestures. It DEFERS rather than swallowing, because that arm runs on
+//     every non-ours node in the game; the reasoning is at the line itself.
+//   * gate 0g tests convert_ask alongside view, picker and the escrow, so any
+//     caller of yads_convert_check is covered whether or not it came through the
+//     ladder.
+//   * yads_convert_apply clears convert_ask in the statement that consumes the
+//     request, which is what keeps gate 0g from refusing the very confirm the
+//     popup was raised to collect - ANCHOR's close() only requests a free, so
+//     ui.menu_closed does not fire until the next begin-step drain, which is
+//     after our tick in that frame. The frame walk is written out at that line.
+//
+// And behind all of it, [popup] declares pause = "main"
+// (ui/menus/misc_menus.toml) so the FSM cannot reach attempt_interact at all
+// while one of these is up - which is now the backstop it was always supposed to
+// be rather than the only thing holding the door.
+//
+// STAMPED, AND REGISTERED AFTER spawn(), which is the picker's rule and for the
+// picker's reason: a throw between popup_creator and spawn() leaves an unspawned
+// popup on ANCHOR.open_menus whose canvas never runs run_exit_listening and
+// which the player therefore cannot close. Registering _rt.convert_ask before
+// that point would make the interact ladder refuse every press for the rest of
+// the session. The stamp itself goes on BEFORE spawn, because ui.menu_closed
+// reports kind == Menu.Popup for every vanilla popup too and the stamp is the
+// only discriminator yads_menu_closed has.
+//
+function yads_open_convert(_node, _target_object_id, _mode) {
+    // Everything the tick needs, and nothing it can re-derive. `source` is here
+    // so the executor can prove the node at the footprint is still the node the
+    // player pointed at, rather than one that replaced it in the meantime.
+    //
+    // `mode` IS NOT A COSMETIC FIELD. It picks the two loc keys below and the
+    // completion toast, and it is what tells yads_convert_apply that this
+    // confirm costs a held chest and a backpack converter rather than the held
+    // converter alone. The shell is deliberately NOT carried on it: the executor
+    // re-derives it from the node standing at the footprint, which is the same
+    // "nothing remembered is trusted" rule the liveness ladder there follows.
+    var _ask = {
+        node: _node,
+        target: _target_object_id,
+        source: _node.object_id,
+        mode: _mode,
+    };
+
+    // WHICH PAIR OF STRINGS. Written out as six whole keys rather than built
+    // from a stem, and that is a TOOLING CONSTRAINT rather than a style: the loc
+    // closure gate reads the string literals that follow a YADS_LOCAL_ROOT up to
+    // the end of the statement, so a key assembled out of fragments is a key the
+    // gate cannot see - it would report the halves missing and all six wholes
+    // unused. Every loc key in this mod is a literal for that reason.
+    var _title = YADS_LOCAL_ROOT + "convert_title";
+    var _body = YADS_LOCAL_ROOT + "convert_body";
+    if (_mode == YADS_MODE_DOWNGRADE) {
+        _title = YADS_LOCAL_ROOT + "downgrade_title";
+        _body = YADS_LOCAL_ROOT + "downgrade_body";
+    }
+    if (_mode == YADS_MODE_UPGRADE) {
+        _title = YADS_LOCAL_ROOT + "upgrade_title";
+        _body = YADS_LOCAL_ROOT + "upgrade_body";
+    }
+
+    // Default geometry throughout: add_title and add_description both call
+    // refresh_backplate_height (PopupMenu.gml:129, :164), so the plate grows to
+    // its content and there is no set_size of ours to keep in step with a
+    // re-worded string. MEASURED anyway, because that is the house rule for any
+    // string this mod ships. The body reflows at backplate(180) - 20 - the text
+    // node's 8px required_padding = 152px (PopupMenu.gml:139-147,
+    // Node.gml:1071-1076), and the reflow is a greedy word wrap in
+    // fnt_mistria_birdseed - popup_description names no eng font of its own
+    // (fiddle/ui/text_styles.toml:12-16), so it inherits `standard` and
+    // fiddle/fonts/text_widths.toml is the right table.
+    //
+    // RE-MEASURED IN THIS WAVE AND ONE SHIPPED NUMBER WAS WRONG: convert_body is
+    // SIX lines at 152px, not the four the 1.3 comment claimed, and
+    // downgrade_body is four, not three. Nothing was ever at risk - the plate is
+    // 50 + (title + 4) + 8 + (lines * line_height + 12) (PopupMenu.gml:113-177),
+    // i.e. ~158px for six lines against the 240px minspec GUI canvas
+    // (Display.gml:4) - but the budget is only a budget if the numbers in it are
+    // real. upgrade_body is six lines and 811px of glyphs, i.e. the same plate as
+    // the widest string already shipping here. All three titles are one line:
+    // 104, 104 and 103px against the 150px header interior.
+    var _popup = popup_creator(_title, _body);
+
+    // ORDER IS THE GLYPH ASSIGNMENT. Cancel must be #1 or it answers Interact
+    // and Confirm answers Escape.
+    _popup.create_button("misc_local/no");
+    _popup.create_button("misc_local/yes", yads_tap_convert_confirm, [_ask]);
+
+    _popup.netstor_convert = _ask;
+    _popup.spawn();
+
+    yads_runtime().convert_ask = _ask;
+    return _ask;
+}
+
+// The Yes button. A REQUEST, not an action, for the reason every widget in this
+// mod records one: this runs inside ANCHOR's own node walk, one frame ahead of
+// the tick that owns every other mutation in the mod, and erasing a grid node
+// from inside a menu callback is how you get a node freed underneath the loop
+// that is still iterating it. yads_convert_apply picks it up at the head of the
+// next tick.
+//
+// close_on_button_tap is left at its default true, so the popup is already
+// closing when this runs (PopupMenu.gml:74-79) - which is why the request lives
+// on the runtime rather than on the popup struct.
+function yads_tap_convert_confirm(_ask) {
+    yads_runtime().convert_do = {
+        node: _ask.node,
+        target: _ask.target,
+        source: _ask.source,
+        mode: _ask.mode,
+    };
+}
+
+//
 // 7. THE NETWORK PICKER
 //
 // One row per Storage Heart that holds a Remote Access Panel: tap the row to

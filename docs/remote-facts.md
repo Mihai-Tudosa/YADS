@@ -18,6 +18,57 @@ is about something the payload does **not** contain. An unmarked `:650` used to
 send a reader 387 lines past the payload's EOF. Same convention in `boot.gml` §5
 and `view.gml` §7f.
 
+> **2026-08-17 — THE TWO NAMESPACES HAVE MERGED.** MOMI 0.15.5 (the installer
+> the owner ran at 18:10; `assets.zip` mtime 2026-08-17 18:10) stages a **756-line**
+> `mmapi_hotkeys.gml`: the chord and pad machinery the 0.15.1 installer stripped
+> is now IN the payload — `mmapi_hotkey_register_binding`, `mmapi_hotkey_register_pad`,
+> `mmapi_hotkey_binding_from_name`, `mmapi_hotkey_name_from_binding`,
+> `mmapi_hotkey_pad_from_name`, `mmapi_hotkey_name_from_pad`,
+> `mmapi_hotkey_binding_held` and three `__mmapi_hotkey_*` helpers. So **every
+> `payload:` anchor below is stale by the offsets in the table**, and the two
+> claims that the payload lacks the chord/pad functions are now false. The eight
+> other mmapi payload files (`mmapi.gml`, `mmapi_hooks.gml`, `mmapi_debug.gml`,
+> `mmapi_local.gml`, `mmapi_events.gml`, `mmapi_combat.gml`, `mmapi_modsave.gml`)
+> are **byte-identical** to the 0.15.1 payload — the config API, the
+> `mmapi_run_installs` drain and `mmapi_emit`'s per-handler catch are untouched.
+> `mmapi_hook_catalog.gml` only GAINED five hooks; all eight this mod registers
+> are still present with unchanged kinds.
+>
+> Every load-bearing fact re-verified against the 0.15.5 payload and still true:
+>
+> | fact | 0.15.1 | 0.15.5 |
+> |---|---|---|
+> | `vk_from_name` vocabulary (38 names, identical set) | `11-56` | `16-61` |
+> | `GAMEPAD_*` → `undefined` | `44-52` | `49-57` |
+> | `name_from_vk` is the exact inverse | `63-94` | `68-99` (code identical, comments reworded) |
+> | reverse lookup, guarded `vk_*` probes | `88-92` | `93-97` |
+> | `register` head / registry init | `96-102` | `412-418` |
+> | `register` engine KeyCode probe | `103-122` | `419-438` |
+> | `register` early-RETURNS without pushing | `110-122` | `426-438` |
+> | conflict Warn, both fire | `124-131` | `440-447` |
+> | `array_push` is the only writer; entry is `{vk, callback, mod_name}` | `133` | `450` |
+> | capability-report try/catch idiom | `169-175` | `515-521` |
+> | poll has no pause / menu / room / text-focus test | `220-260` | `604-753` (keyboard arm `664-699`) |
+> | poll snapshots the array LENGTH once, then re-reads each entry | `231` | `665` |
+> | plain forward loop over push order | `232` | `666` |
+> | `keyboard_check_pressed` = a press EDGE | `240` | `680` |
+> | per-entry dead-marking, never the whole poll | `241-247` | `681-687` |
+> | `entry.callback()` takes no arguments | `250` | `690` |
+> | registers at payload file scope (`__mmapi_register_as`) | `262` | `755` |
+>
+> Three behavioural deltas, none of which breaks the remote:
+> 1. `array_push` at `:450` is now preceded by `__mmapi_hotkey_warn_bare_overlap`
+>    (`:449`), a log-only advisory. The pushed entry's shape is unchanged, so
+>    §5d's live `entry.vk` mutation still lands.
+> 2. The poll's `if (hotkeys == undefined) { return; }` is gone; the count is now
+>    `(hotkeys == undefined) ? 0 : array_length(hotkeys)`. Still ONE snapshot
+>    before the loop — the heal path's append is still seen on the next frame.
+> 3. **NEW RISK, advisory only:** a chord registered by another mod runs FIRST
+>    (`:619-660`) and CONSUMES its trigger code for that frame, so a bare
+>    registration on the same key stays quiet. If a future mod binds e.g.
+>    `SHIFT+F5` while the remote sits on `F5`, the remote misses that frame.
+>    Nothing on our side can observe it; the rebind picker is the escape hatch.
+
 ## The poll is RAW, and it fires in our own frame
 
 `mmapi_hotkeys_poll` has no pause test, no menu test, no room test and no
@@ -27,7 +78,18 @@ at mmapi payload file scope, ahead of `yads_tick` in the same
 order — so the tick consumes that flag **in the same frame the key went down**,
 not the next one. Everything the press does is therefore gated by
 `yads_remote_ready`: `instance_exists(obj_ari)`, `!game_paused()`, the FSM in
-`{Default, MountDefault}`, no open view, no open picker.
+`{Default, MountDefault}`, no open view, no open picker, **no converter confirm
+popup and no live convert escrow**.
+
+Those last two are hardening rather than a fix, and neither was exploitable. The
+confirm popup sets `PauseStatus.MENU`, so `game_paused()` already refused; the
+escrow is closed by the sweeper at the head of `yads_tick`, strictly above
+`yads_remote_press` in the same tick, so either it was gone or the throw that
+stranded it also skipped the press. But that made the guard *tick order plus
+somebody else's pause flag*, which is the same doctrine gap the `view` and
+`picker` clauses exist to close — they are redundant against `game_paused()` too
+and kept because they are the invariants this mod depends on. Two struct reads,
+same argument. See `docs/converter-facts.md` for the escrow.
 
 `game_paused()` is one call over a bitfield of `CUTSCENE | WINDOW | MENU`
 (`Pause.gml:1-15`). `WINDOW` is OS window focus only — the two writers are

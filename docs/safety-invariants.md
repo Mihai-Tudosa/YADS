@@ -21,6 +21,29 @@ Both moved here from `CLAUDE.md` (size rule); both are still binding.
   argument is in `yads/fiddle/object_prototypes/furniture.toml`.
 - Pastel glow palette: measured colour-blind cost, accepted (`docs/history.md`).
 
+## THE TWIN FREEZE — `inventory_size` and `value`
+
+Moved here from `CLAUDE.md` (size rule); binding, and the reason
+`make_fiddle.py` is a checked-in generator rather than a one-off script.
+
+- **A shipped twin's `inventory_size` can never be lowered.**
+  `Grid.gml:1139-1145` force-resizes a loaded chest to its CURRENT prototype size
+  and `Inventory.gml:49-52` pops the trailing slots **undrained** — no drain, no
+  `lost_items`, no drop. Lowering it silently deletes the tail of every saved
+  instance of that key. The `assert` on the line above only fires under
+  `DEBUG_ASSERTIONS`; the `resize` runs unconditionally.
+- **A twin's `value` is NOT frozen** — it is re-derived from the prototype every
+  load and never serialized — but it must stay **two literal reals**. Copying the
+  source's `bin = "self.recipe * 1.1"` hard-asserts on a recipe-less twin, and so
+  does the cross-item `"<source>.bin"` form for 11 of the 59: `Items.gml:488-490`
+  re-enters the resolver with `ident`, the TWIN, not the referenced item, so a
+  source that resolves *after* its twin (royal, stone, void, spring_festival)
+  evaluates its own `self.recipe` against the twin.
+- Both are generator output, which is what stops an editor renaming or reshaping
+  one by hand. The converter's own gates re-assert the capacity rule at gesture
+  time (`docs/converter-facts.md`, gate 0e) so that the day the symmetry breaks
+  costs a refusal toast rather than a truncated inventory.
+
 ## THE `destructable` CONTRACT
 
 `node.destructable` must never be derived on a timer and must never rest at

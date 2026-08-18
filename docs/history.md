@@ -10,6 +10,133 @@ identifiers (`prajaja_digital_storage_*`, `global.__netstor`, the
 `gml/boot.gml` / `gml/network.gml` / `gml/view.gml`. The `netstor_*` CONTENT
 keys did not move and never will.
 
+## Beta 1.3 wave 4 — the upgrade gesture (current; here for the blast radius only)
+
+The feature itself is in `CLAUDE.md` § Status and `docs/converter-facts.md`. What belongs
+in the record is the surface it touched: **7 functions added, 14 code-changed, 161 of the
+175 pre-existing token-identical, 0 removed**, and all nine §8 functions token-identical
+(`yads_reconcile`, `yads_updates_sum`, `yads_view_totals`, `yads_withdraw`,
+`yads_mirror_remove`, `yads_deposit`, `yads_quick_stack`, `yads_deposit_fit`,
+`yads_flush_hand`). No art: `tools/regen_gate.py` still reports 175 files byte-identical.
+Two shipped facts were corrected in passing — `convert_body` is six reflowed lines, not the
+four the 1.3 comment claimed, and `downgrade_body` four, not three — and gate 0d's verdict
+was split out as `YADS_CONVERT_FOOTPRINT`, which convert and downgrade fold straight back
+onto `convert_refused` because neither can produce it.
+
+## Beta 1.3 waves 1-2 — the kind table and the classifier fix (shipped, superseded as status)
+
+- **The ObjectId-indexed kind table** (`CLAUDE.md` § Standing constraints) replaced all 16
+  id-comparison sites, so adding the 59 `netstor_crate_*` twins was an append to `UNIT_KEYS`
+  and nothing else; an unresolved key is silently skipped, which is what lets the list name a
+  key before the fiddle ships it. `ITEM_KEYS` (boot.gml §4) is a SEPARATE seam — items with a
+  RECIPE — and the recipe-less twins never go in it. `OFFLINE_SLUGS` folded into the memo as
+  `offline[object_id]`: three `try_string_to_asset` calls per glow rescan would have been 62 a
+  second at scale. No behaviour change on the then-current four keys, proved per site over all
+  8 install states; §8 was token-identical.
+- **`yads_category`'s ladder let PROVENANCE tags outrank IDENTITY**, in four arms plus two
+  found afterwards: `fishable`, `gem`, the `furniture` tag over the never-reachable bucket 11,
+  `mushroom` and the derived `use == Consume` all describe where a thing came from or what you
+  can do to it, and a `material`/`refined_material`/`food`/`archaeology` identity (`_strong`)
+  now beats them — except at bucket 7, where every ore carries `material` and the guard would
+  empty it. 227 items reclassified (221 + 6), 0 residual, no save impact; evidence per arm
+  below.
+
+## The sort-bucket classifier fix — full evidence (shipped IN Beta 1.3)
+
+Not superseded; this is the working detail behind `CLAUDE.md`'s one-paragraph
+summary, parked here for the size rule. There was no separate 1.2.1 release —
+the four-arm fix and the two-arm follow-up ship together in Beta 1.3.
+
+**The bug class, stated once.** `yads_category` (network.gml §4) is an ordered
+first-match-wins ladder over `prototype.tags` plus the derived `prototype.use`.
+Several arms tested a tag that describes where an item CAME FROM, or what you
+can do to it, above the tag that says what it IS. Vanilla never has to choose —
+`AlmanacMenu.gml:16` is `contains_any_value_from`, i.e. membership, and
+`sub_menus.toml:21-34` cheerfully lists `basic_wood` under both the Fishing lens
+and the Materials lens. A 14-bucket sort IS a partition, so it must choose.
+
+The discriminator is one local, `_strong` = `material` / `refined_material` /
+`food` / `archaeology` — vanilla's own almanac lenses for identity — and it now
+gates three arms. It must NEVER gate bucket 7: every ore carries `material`, so
+`!_strong` would empty it.
+
+| arm | was | now | items | why the old signal was not identity |
+|---|---|---|---|---|
+| 4 Fish and bugs | `fishy\|fishable\|bugs` | `!_strong && (…\|dive)` | 2 + 27 + 2 + 1 | `fishable` has ONE engine reader, `Items.gml:317-331`, and it only picks a catch-sprite icon variant. Wood, Fiber and cooked seafood carry it. `dive` added because vanilla's own fish lens is `["fishable","dive"]` (`sub_menus.toml:28`), rescuing `pond_snail`/`river_snail`. |
+| 7 Ores, gems, ingots | `gem` | `gem && !wood` | 1 | `gem` has zero engine readers; `hard_wood` (`materials.toml:16-27`) is the only item with a bogus one, and `wood` is the two-item discriminator vanilla hands us. |
+| 11 before 10 | 10 first | 11 first | 107 | every `wallpaper`/`flooring`/`tile_placement` item ALSO carries the `furniture` tag (`basic_wallpaper_oak` = `["furniture","wallpaper","basic_set"]`), so bucket 10 swallowed all of them and bucket 11 shipped holding **0 of 2665 items** in every release. Reordering assigns the same literal bucket numbers, so it renumbers nothing. |
+| 10 Furniture | `furniture` tag | `… \|\| use == PlaceObject` | 81 | `Items.gml:205-213` ASSERTS that an item with an `object` field places a node whose `ObjectCategory` IS Furniture — strictly stronger than the tag. Spouse furniture, 10-heart gifts, date photos, pet beds and the crafting stations carry no `furniture` tag. |
+| 3 Crops and forage | `mushroom` | `mushroom && !_strong` | 4 | `mushroom` has zero engine readers as an item tag (the `pets.toml` hits are a `PetKind` fed through `string_to_pet_kind`, `PetPrototypes.gml:25`) and no almanac lens. `glowing_mushroom`, `purple_mushroom`, `red_toadstool`, `wild_mushroom` are Mushroom-monster drops (`monsters/shroom.toml:75/118/172/216`) tagged `["material","mushroom","mushroomy"]` and never `forageable`. |
+| 6 Food and drink | `… \|\| use == Consume` | `… \|\| (Consume && !_strong)` | 2 | `Items.gml:135-136` infers `edible` from a bare `restore`, so the arm catches anything chewable. `chocolate` (`["pantry","choco","material"]`, restore 10) and `ice_block` (`["material"]`, restore 6) are cooking ingredients; chocolate's seven `pantry`+`material` siblings (curry_powder, honey ×4, rock_salt, soy_sauce) were already in Materials. |
+
+**Deliberately NOT gated.** `crop` and `forageable` are almanac lenses in their
+own right, with two and four engine readers, so they outrank `material` on
+purpose: the four material-tagged shells (`blue_conch_shell`,
+`pink_scallop_shell`, `sand_dollar`, `spirula_shell`) and the five real forage
+mushrooms (`earthshroom`, `morel_mushroom`, `oyster_mushroom`, `pineshroom`,
+`spirit_mushroom`) stay in bucket 3. The `food`/`drink` TAGS at bucket 6 are not
+gated either — only the derived `Consume` is.
+
+**Known and accepted, not fixed.** 105 `artifact_replica_*` in bucket 9 (the
+mod's deliberate taxonomy); 10 `perfect_*` ores in bucket 7; `fossilized_egg`;
+`humble_pie` (tags `[]`, a vanilla joke item); `netstor_remote` sorting into
+Materials. **Genuinely ambiguous, left alone:** `hay` and `grass_seed` carry
+`refined_material` + `animal_feed` + `ranching` and land in bucket 5 via
+`ranching`, even though bucket 8 lists `animal_feed`. `ranching` IS an almanac
+lens, so both readings are defensible; moving them was out of scope and would
+have been a change nobody asked for.
+
+**Verification.** `C:/Claude/.scratch/b13recon/classify.py` replays the ladder
+over all 2665 vanilla items in three rulesets: `diff` (pre-fix → four-arm fix)
+prints 221 in exactly seven transitions, `diff13` (four-arm → six-arm) prints
+the 6 above and nothing else, `diffall` prints 227 — the sets are disjoint.
+Bucket populations move only 3 (−4), 6 (−2) and 8 (+6). **Zero save or config
+impact**: bucket numbers are not persisted anywhere, `_view.filter` is
+view-local, and the `_rt.categories` memo already dies on `save.game_loaded`.
+
+## Status — Beta 1.2 (historical; remote access)
+
+Shipped 2026-08-13. `netstor_remote`, a craftable non-placeable. Hand one to a
+Storage Heart and your remote key (default F6, rebound in game) opens it from
+anywhere; withdrawing it at a PANEL unbinds. HOLDING the key ALWAYS opens the
+picker, the only route to rebind.
+
+- **The binding is CONTAINMENT.** "Linked" means a `netstor_remote` sits in that
+  heart's `Inventory`, which the engine already saves inside the chest it lives
+  in. No modsave sidecar: nothing to version, repair, or disagree with the world.
+- **Scan `STORAGE_NODES`, NEVER `GRIDS[]`** — `GRIDS` is keyed by location and the
+  dynamic grids (greenhouses, mini-museum, tables) are not in it. `yads_remote_scan`
+  walks it once and returns every bound heart, current location first.
+- **THE HOTKEY, PICKER AND REBIND HAVE THEIR OWN FACTS FILE** — `docs/remote-facts.md`.
+  Read it before touching `yads_remote_*`, `yads_picker_*`, `yads_rebind_*` or the
+  hotkey block of the tick. It is the authored document for the gesture ladder, the
+  arming predicate, the default's identity, the picker surface and the rebind, so
+  nothing here restates them. The two that bite hardest: the poll is RAW and lands
+  in OUR frame, so all of it is gated by `yads_remote_ready`; and chords and pad
+  binds are absent from the 0.15.1 payload, which only momi can see.
+- **THE KEY REBINDS IN GAME, LIVE** — picker footer, §5d + §7f. mmapi's poll
+  re-reads `entry.vk` every frame, so we hold our registry entry (pre/post length
+  test: register can early-return WITHOUT pushing) and move it with `_rt.remote_vk`
+  in lockstep. **`entry.dead` is PERMANENT and nothing clears it** — only ever
+  assign a vk that resolved through `mmapi_hotkey_vk_from_name` AND was just polled
+  by `keyboard_check_pressed`; a missing or dead entry gets a FRESH registration,
+  never a mutation. Capture `lock()`s the menu, which gates the rows, Close AND
+  `run_exit_listening` and so leaves ESC ours to read as cancel, in the THINK and
+  never in `yads_tick`. **F6-hold is a permanent hold-only rescue** whenever the
+  active key is not F6; an unparseable config name takes F6 with the FULL ladder.
+- **H1/H2/H3, the custody exclusions.** `yads_quick_stack` skips backpack remotes (a
+  SANCTIONED H1 exclusion: a bare `continue`, provably inert) and `yads_deposit_fit` refuses
+  them outright: a remote in a Storage Block is a binding nothing can read. Refusal
+  returns 0, so the reconciler's EXISTING overflow path strips and refunds it. A heart's own
+  remote stays VISIBLE in the aggregate — never hide member items — but a REMOTE view makes
+  that cell INERT (H3): `filter_callback` gates `input_check`, killing pickup and swap alike.
+- **`_rt.view` registers right after the menu spawn; `_rt.picker` after `spawn()`.**
+  Deliberate (`docs/remote-facts.md`); `ui.menu_closed` releases both, picker first.
+- **A remote view skips the chest lid** (`node.renderer` is never cleared, ids are
+  recycled, `instance_is_alive` can answer true about a stranger). Residuals: the
+  remote sorts into Materials; a withdrawn remote put straight back is refused and
+  refunded, still unbound; the picker caps at 8 rows, unnamed rooms "Network N".
+
 ## Status — Beta 1.1 (historical; three UI additions)
 
 Shipped 2026-08-11. The two standing rules it established (never bump

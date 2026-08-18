@@ -1,0 +1,7 @@
+[meta_properties]
+asset_kind = "Shape"
+
+[asset_properties]
+kind = "box"
+offset = [-15, -18]
+dimensions = [30, 17]

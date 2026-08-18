@@ -1,9 +1,9 @@
 # <---------NETSTOR SET ITEMS------------->
-# YADS — network storage furniture (heart / block / panel) plus the handheld
-# remote (Beta 1.2).
+# YADS — network storage furniture (heart / block / panel), the handheld
+# remote (Beta 1.2) and the Network Converter (Beta 1.3).
 #
 # ⚠ THE `netstor_*` KEYS AND `recipe_key`s ARE FROZEN — netstor_heart,
-# netstor_block, netstor_panel, netstor_remote. Item and object keys are
+# netstor_block, netstor_panel, netstor_remote, netstor_converter. Item and object keys are
 # save-serialized by name; renaming one deletes every placed unit and everything
 # inside it from existing saves (see object_prototypes/furniture.toml).
 # netstor_remote is frozen for a second reason on top of that one: the binding
@@ -112,3 +112,162 @@
 		{ hours = 0, minutes = 45 },
 	]
 	recipe_key = "netstor_remote"
+
+# The Network Converter — the second non-placeable in the set, and THE ONLY
+# SOURCE OF THE 59 CRATE TWINS. Hold it and interact with a placed vanilla
+# chest to turn that chest into its networked twin; hold it and interact with a
+# placed crate to turn it back. Contents survive both directions; one converter
+# is consumed per conversion.
+#
+# THE KEY IS FROZEN THE MOMENT THIS SHIPS, like every other key in this file,
+# and for the ordinary reason (Grid.gml:1075-1080). It is a weaker freeze than
+# netstor_remote's — nothing is *bound* to a converter and none is ever stored
+# in a node — but a rename still deletes every converter sitting in every
+# player's backpack.
+#
+# NO `object` FIELD, for exactly the reason written over netstor_remote above:
+# `object` is the arm that sets `prototype.use = ItemUse.PlaceObject`
+# (Items.gml:205-213), and a converter that could be dropped into the world as
+# furniture would be a chest-shaped hole in the gesture grammar. NO `restore`,
+# NO `health_modifier`, NO `stamina_modifier` either — Items.gml:135-136 infers
+# `edible` from the last two and an edible converter is one hotbar mis-click
+# from gone.
+#
+# TAGS ARE THE REMOTE'S, VERBATIM: netstor_set puts it in the mod's own
+# "Digital Storage" crafting sub-category (fiddle/ui/crafting/woodcrafting.toml
+# selects on that tag and needs no edit for a new member), and material is the
+# vanilla shelf tag for a crafted non-placeable. NOT "furniture" — it is an
+# infusion-supported tag (fiddle/infusions.toml) and an infused converter would
+# be a second LiveItem shape for `yads_converter_slot` to match — and NOT
+# "chest_and_storage", which would advertise a non-placeable in the vanilla
+# Chests & Storage list.
+#
+# CRAFTING LEVEL 1, NOT THE REMOTE'S 3, AND THE NUMBER IS FORCED RATHER THAN
+# CHOSEN. This item is the only way a crate twin can ever exist: gate it at 3
+# and 59 of the mod's 62 units are unreachable on a fresh save while
+# netstor_block — a level-1 recipe for the same job — is craftable from the
+# first day. The remote sits at 3 because it is a convenience over a network
+# you already own; the converter is the network's content.
+#
+# THE RECIPE IS THE ACCESS PANEL'S, EXACTLY: 1 copper_ingot + 1 glass, 10
+# minutes. Cheap on purpose. A converter is spent per chest and a farm has
+# dozens of chests, so anything dearer turns a one-gesture feature into
+# bookkeeping. What stops it being an exploit is that it converts rather than
+# creates: the player already paid for the chest, and the twin's `value` is the
+# source chest's own two numbers (fiddle/items/furniture/netstor_crates.toml),
+# so no conversion moves a single gold piece of sale value.
+#
+# VALUE: `store` only, so `bin` derives as store * 0.5 (Items.gml:6-16). 150 is
+# the Access Panel's, which is the item it costs the same to make. Deliberately
+# NOT recipe-derived: `self.recipe * 1.1` on a two-ingredient recipe is a
+# rounding argument nobody needs, and a flat number cannot drift when a vanilla
+# ingot is re-priced.
+[netstor_converter]
+	description = "Rewires a placed chest into your storage network, or back again. Contents are kept."
+	icon_sprite = "spr_ui_item_netstor_converter"
+	name = "Network Converter"
+	recipe_is_default = true
+	value = { store = 150 }
+	tags = ["netstor_set", "material"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 1, item = "copper_ingot" },
+		{ count = 1, item = "glass" },
+		{ hours = 0, minutes = 10 },
+	]
+	recipe_key = "netstor_converter"
+
+# --- THE FOUR CONNECTORS (Beta 1.3) -----------------------------------------
+# Magic Carpet / Magic Tile / Bundle of Cables / Cloud Connector -- rug-layer
+# placeables, never chests. Field shapes copied verbatim from vanilla's own
+# rug item template, `starter_stone_path`
+# (fiddle/items/furniture/starter_farm_set.toml:68-77 in the game corpus):
+# `object` names the prototype 1:1, tags carry "furniture" (the vanilla
+# placeable convention -- every rug item ships it) and "ground_decor"
+# (vanilla's own rug/path shelf tag). Deliberately NOT "chest_and_storage":
+# that tag is the vanilla Chests & Storage sub-category and a connector is
+# not a chest.
+#
+# "netstor_set" is what puts all four in this mod's own "Digital Storage"
+# crafting sub-category with NO edit to
+# fiddle/ui/crafting/woodcrafting.toml -- that file selects on
+# `tags = ["netstor_set"]` alone, and its own header already says a new set
+# member is picked up automatically.
+#
+# `value = { store = N }` ONLY -- the same flat, drift-proof form
+# netstor_block/_panel/_converter use above, never `bin = "self.recipe * 1.1"`,
+# which docs/safety-invariants.md documents as a hazard class for a
+# recipe-having item read by the wrong ident. Values are cheap and ordered by
+# recipe cost: fiber-only cheapest, the furnace-gated Cloud dearest.
+#
+# ALL FOUR KEYS ARE FROZEN THE MOMENT THIS SHIPS, for the same reason as every
+# other key in this file (Grid.gml:1075-1080) -- a materially weaker freeze
+# than the placeable units' or the remote's, because a connector never holds
+# an inventory to lose on a rename.
+#
+# ALL FOUR ARE ALSO IN boot.gml's ITEM_KEYS (gml/boot.gml section 4): they
+# carry a recipe, and recipe_is_default never fires on an existing save, so
+# an item missing from that list would be locked forever on every save that
+# predates this update.
+
+[netstor_link_carpet]
+	description = "Wires everything it touches into the network."
+	icon_sprite = "spr_ui_item_netstor_link_carpet"
+	name = "Magic Carpet"
+	recipe_is_default = true
+	object = "netstor_link_carpet"
+	value = { store = 40 }
+	tags = ["furniture", "netstor_set", "ground_decor"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 3, item = "fiber" },
+		{ hours = 0, minutes = 10 },
+	]
+	recipe_key = "netstor_link_carpet"
+
+[netstor_link_tile]
+	description = "Paves a networked floor under anything you place on it."
+	icon_sprite = "spr_ui_item_netstor_link_tile"
+	name = "Magic Tile"
+	recipe_is_default = true
+	object = "netstor_link_tile"
+	value = { store = 45 }
+	tags = ["furniture", "netstor_set", "ground_decor"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 3, item = "ore_stone" },
+		{ hours = 0, minutes = 10 },
+	]
+	recipe_key = "netstor_link_tile"
+
+[netstor_link_cables]
+	description = "Runs a hidden line to the network, no matter what sits above it."
+	icon_sprite = "spr_ui_item_netstor_link_cables"
+	name = "Bundle of Cables"
+	recipe_is_default = true
+	object = "netstor_link_cables"
+	value = { store = 60 }
+	tags = ["furniture", "netstor_set", "ground_decor"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 2, item = "basic_wood" },
+		{ count = 1, item = "ore_copper" },
+		{ hours = 0, minutes = 10 },
+	]
+	recipe_key = "netstor_link_cables"
+
+[netstor_link_cloud]
+	description = "Floats a link to the network over anything below."
+	icon_sprite = "spr_ui_item_netstor_link_cloud"
+	name = "Cloud Connector"
+	recipe_is_default = true
+	object = "netstor_link_cloud"
+	value = { store = 80 }
+	tags = ["furniture", "netstor_set", "ground_decor"]
+	crafting_level_requirement = 1
+	recipe = [
+		{ count = 1, item = "glass" },
+		{ count = 2, item = "fiber" },
+		{ hours = 0, minutes = 10 },
+	]
+	recipe_key = "netstor_link_cloud"

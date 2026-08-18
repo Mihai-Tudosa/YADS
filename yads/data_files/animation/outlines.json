@@ -2,5 +2,10 @@
   "spr_ui_item_netstor_heart": "spr_ui_item_netstor_heart_outline",
   "spr_ui_item_netstor_block": "spr_ui_item_netstor_block_outline",
   "spr_ui_item_netstor_panel": "spr_ui_item_netstor_panel_outline",
-  "spr_ui_item_netstor_remote": "spr_ui_item_netstor_remote_outline"
+  "spr_ui_item_netstor_remote": "spr_ui_item_netstor_remote_outline",
+  "spr_ui_item_netstor_converter": "spr_ui_item_netstor_converter_outline",
+  "spr_ui_item_netstor_link_carpet": "spr_ui_item_netstor_link_carpet_outline",
+  "spr_ui_item_netstor_link_tile": "spr_ui_item_netstor_link_tile_outline",
+  "spr_ui_item_netstor_link_cables": "spr_ui_item_netstor_link_cables_outline",
+  "spr_ui_item_netstor_link_cloud": "spr_ui_item_netstor_link_cloud_outline"
 }
